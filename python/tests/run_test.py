@@ -59,7 +59,7 @@ import mkassets  # noqa: E402
 LWASM = os.environ.get("LWASM", "lwasm")
 
 # runtime error codes (SDC_E* in asm/dmpkg.asm)
-ENODEV, EMOUNT, EHDR, EEOF, ETIME, EFAIL, EVER = range(1, 8)
+ENODEV, EVER, EMOUNT, EHDR, EEOF, ETIME, EFAIL = range(1, 8)
 READY_LAG = 20          # cycles READY stays stale after a block is drained
 FILL_TIME = 400         # cycles to "read" the next block from the card
 CMD_SETTLE = 36         # 20us at 1.79MHz: no register access after a command

@@ -39,7 +39,7 @@ block toc_blocks .. asset data, placed first-fit in manifest order
 | 15 | 1 | toc_blocks | blocks used by header + TOC (1–255); first data block |
 | 16 | 16 | name | project name, ASCII, space-padded, not terminated |
 
-`sdc_open` compares `build_id` (bytes 8–11) against `SDC_BuildID` from the generated `assettab.asm`, so a program built against a different image fails with error 3. The other header fields aren't checked: the TOC, and through its CRCs the data, are already covered by `build_id`.
+`sdc_open` compares `build_id` (bytes 8–11) against `SDC_BuildID` from the generated `assettab.asm`, so a program built against a different image fails with error 4. The other header fields aren't checked: the TOC, and through its CRCs the data, are already covered by `build_id`.
 
 ## TOC entry (16 bytes)
 
