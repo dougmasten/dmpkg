@@ -271,7 +271,7 @@ sdc_open
         jsr     sdc_waitready
         bcs     @err
         clra                            ; A counts 256 bytes, 2 per pass
-@name_lp
+@name_loop
         ldb     ,x                      ; name byte, or 0 padding once the
         beq     @name_1                 ; terminator is reached (X parks on it)
         leax    1,x
@@ -281,7 +281,7 @@ sdc_open
         leax    1,x
 @name_2 stb     SDC_DATA+1
         adda    #2
-        bne     @name_lp
+        bne     @name_loop
         jsr     sdc_waitidle
         bcs     @err
         lda     SDC_STAT
@@ -386,8 +386,7 @@ sdc_load
         ldd     sdc_desc.off,x
         cmpd    sdc_off
         beq     @here
-@seek
-        pshs    u
+@seek   pshs    u
         lda     sdc_desc.blk,x
         ldu     sdc_desc.blk+1,x
         jsr     sdc_start
@@ -401,10 +400,10 @@ sdc_load
         tfr     d,y
         leay    ,y                      ; (TFR leaves the flags alone)
         beq     @skip_odd
-@skip_lp
+@skip_loop
         ldd     SDC_DATA                ; drop a pair: $FF4A then $FF4B
         leay    -1,y
-        bne     @skip_lp
+        bne     @skip_loop
 @skip_odd
         lda     sdc_desc.off+1,x
         bita    #1
@@ -467,7 +466,7 @@ sdc_load
 ; decb records: [len.w addr.w data]... [0000 exec.w]
 @decb   clr     sdc_phys
         clr     sdc_left
-@decb_lp
+@decb_loop
         jsr     sdc_getword             ; D = length
         lbcs    @err
         std     sdc_left+1
@@ -477,7 +476,7 @@ sdc_load
         tfr     d,u
         jsr     sdc_copy
         lbcs    @err
-        bra     @decb_lp
+        bra     @decb_loop
 @decb_end
         jsr     sdc_getword             ; exec address
         lbcs    @err
@@ -530,8 +529,8 @@ sdc_start
 sdc_settle
         pshs    x
         ldx     #SDC_DELAY
-@lp     leax    -1,x
-        bne     @lp
+@loop   leax    -1,x
+        bne     @loop
         puls    x,pc
 
 ;------------------------------------------------------------------------------
@@ -691,7 +690,7 @@ sdc_nextblk
 sdc_copy
         pshs    b,x,y
         ldx     #SDC_DATA
-@lp     lda     sdc_left
+@loop   lda     sdc_left
         ora     sdc_left+1
         ora     sdc_left+2
         bne     @more
@@ -805,4 +804,4 @@ sdc_copy
         jsr     sdc_nextblk
         ldd     #0
 @so     std     sdc_off
-        jmp     @lp
+        jmp     @loop
