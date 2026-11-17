@@ -185,13 +185,13 @@ sdc_ver         fdb     0       ; firmware version (BCD), set by sdc_version
 sdc_open
         pshs    b,x,y,u
         ifdef   SDC_NOVERCHK
-        lbsr    sdc_stop
+        jsr     sdc_stop
         lda     #SDC_CMDMODE
         sta     SDC_LATCH
-        lbsr    sdc_waitidle
+        jsr     sdc_waitidle
         bcs     @err
         else
-        lbsr    sdc_version             ; stops any stream, enters command mode
+        jsr     sdc_version             ; stops any stream, enters command mode
         bcs     @err
         cmpd    #SDC_MINVER
         bhs     @ver_ok
@@ -201,7 +201,7 @@ sdc_open
         endc
         lda     #SDC_C_MOUNT
         sta     SDC_STAT
-        lbsr    sdc_waitready
+        jsr     sdc_waitready
         bcs     @err
         clra                            ; A counts 256 bytes, 2 per pass
 @name_lp
@@ -217,7 +217,7 @@ sdc_open
         stb     SDC_DATA+1
         adda    #2
         bne     @name_lp
-        lbsr    sdc_waitidle
+        jsr     sdc_waitidle
         bcs     @err
         lda     SDC_STAT
         bpl     @mount_ok
@@ -226,7 +226,7 @@ sdc_open
 @mount_ok
         clra                            ; start stream at block 0
         ldu     #0
-        lbsr    sdc_start
+        jsr     sdc_start
         bcs     @err
         ldy     3,s                     ; expected build_id pointer (saved Y)
         beq     @ok
@@ -248,7 +248,7 @@ sdc_open
 @hdr_bad
         lda     #SDC_EHDR               ; ERROR CODE: stale image
 @err
-        lbsr    sdc_fail
+        jsr     sdc_fail
         puls    b,x,y,u,pc
 
 ;------------------------------------------------------------------------------
@@ -264,16 +264,16 @@ sdc_open
 ;             : in sdc_ver.
 ;------------------------------------------------------------------------------
 sdc_version
-        lbsr    sdc_stop
+        jsr     sdc_stop
         lda     #SDC_CMDMODE
         sta     SDC_LATCH
-        lbsr    sdc_waitidle
+        jsr     sdc_waitidle
         bcs     @exit
         lda     #'V
         sta     SDC_P1
         lda     #SDC_C_QUERY
         sta     SDC_STAT
-        lbsr    sdc_waitidle
+        jsr     sdc_waitidle
         bcs     @exit
         ldd     #0
         tst     SDC_STAT                ; FAILED: no VERSION command (< 113)
@@ -299,7 +299,7 @@ sdc_stop
         clr     sdc_live
         lda     #SDC_C_ABORT
         sta     SDC_STAT
-        lbsr    sdc_waitidle
+        jsr     sdc_waitidle
 @exit   andcc   #$fe                    ; clear carry (success)
         puls    a,pc
 
@@ -360,7 +360,7 @@ sdc_load
         pshs    u
         lda     SDC_D_BLK,x
         ldu     SDC_D_BLK+1,x
-        lbsr    sdc_start
+        jsr     sdc_start
         puls    u
         lbcs    @err
         ldd     SDC_D_OFF,x             ; skip to the asset's offset (0-511)
@@ -394,7 +394,7 @@ sdc_load
         clr     sdc_phys
         pshs    u
         ldu     SDC_D_DEST+1,x
-        lbsr    sdc_copy
+        jsr     sdc_copy
         puls    u
         lbcs    @err
         bra     @ok
@@ -425,7 +425,7 @@ sdc_load
         addd    #SDC_WINDOW
         tfr     d,u
         sta     sdc_phys                ; nonzero (window is never in page 0)
-        lbsr    sdc_copy
+        jsr     sdc_copy
         pshs    a,cc
         lda     sdc_msave
         sta     SDC_MMUREG
@@ -438,23 +438,23 @@ sdc_load
 @decb   clr     sdc_phys
         clr     sdc_left
 @decb_lp
-        lbsr    sdc_getword             ; D = length
+        jsr     sdc_getword             ; D = length
         lbcs    @err
         std     sdc_left+1
         beq     @decb_end
-        lbsr    sdc_getword             ; D = load address
+        jsr     sdc_getword             ; D = load address
         lbcs    @err
         tfr     d,u
-        lbsr    sdc_copy
+        jsr     sdc_copy
         lbcs    @err
         bra     @decb_lp
 @decb_end
-        lbsr    sdc_getword             ; exec address
+        jsr     sdc_getword             ; exec address
         lbcs    @err
         tfr     d,u
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    b,x,y,pc
-@err    lbsr    sdc_fail
+@err    jsr     sdc_fail
         puls    b,x,y,pc
 
 ;------------------------------------------------------------------------------
@@ -469,7 +469,7 @@ sdc_load
 ;             : and resets the stream position to offset 0.
 ;------------------------------------------------------------------------------
 sdc_start
-        lbsr    sdc_stop
+        jsr     sdc_stop
         sta     sdc_blk
         stu     sdc_blk+1
         sta     SDC_P1
@@ -666,7 +666,7 @@ sdc_copy
         lbeq    @done
         tst     sdc_poll                ; new block: wait for the buffer
         beq     @nopoll
-        lbsr    sdc_waitready
+        jsr     sdc_waitready
         lbcs    @exit
         clr     sdc_poll
 @nopoll tst     sdc_phys
@@ -740,7 +740,7 @@ sdc_copy
         addd    sdc_chunk
         cmpd    #512
         bne     @so
-        lbsr    sdc_nextblk
+        jsr     sdc_nextblk
         ldd     #0
 @so     std     sdc_off
         lbra    @lp
