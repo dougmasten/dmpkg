@@ -15,9 +15,11 @@ import sys
 import zlib
 
 from . import __version__
-from .pack import (BLOCK, DIR_HI, DIR_LO, DISK_BYTES, F_DECB, F_PHYS, H_DISK, HD_MIN,
-                   HDR_SIZE, MIN_IMAGE, SS_MAX, TOC_ENTRY, PackError, build, gran_of,
-                   read_disk, read_image)
+from .decb import DIR_HI, DIR_LO, DISK_BYTES, HD_MIN, SS_MAX, gran_of, read_disk
+from .errors import PackError
+from .image import (BLOCK, F_DECB, F_PHYS, H_DISK, HDR_SIZE, MIN_IMAGE, TOC_ENTRY,
+                    read_image)
+from .pack import build
 
 
 def cmd_list(path):

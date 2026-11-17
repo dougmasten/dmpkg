@@ -44,11 +44,17 @@ Requires Python 3.8+ and PyYAML (installed by `pip install -e python`).
 ```
 python/         the packer, a Python project of its own
   pyproject.toml
-  src/dmpkg/    pack.py (build, image reading), cli.py (commands)
+  src/dmpkg/    pack.py      build(): manifest -> layout -> image -> disk -> outputs
+                manifest.py  reading and checking project.yaml
+                layout.py    first-fit placement and image size
+                image.py     header, TOC, descriptors, build_id, reading images
+                decb.py      LOADM files, 8.3 names, the DECB disk
+                outputs.py   equates, table and map text
+                cli.py       the dmpkg command (build, list, verify)
   tests/        end-to-end test of the packer and runtime (run_test.py)
 asm/            the 6809 runtime (dmpkg.asm)
 example/        example project, asset generator and loader
-docs/           image format
+docs/           image format (FORMAT.md) and manifest reference (MANIFEST.md)
 Makefile        builds the example and runs the tests across both parts
 ```
 

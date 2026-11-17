@@ -48,8 +48,9 @@ from MC6809.tests.test_config import TestCfg
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))      # repo root: python/tests -> .
 try:
-    from dmpkg import pack as dmpkg  # noqa: E402
+    from dmpkg import decb, image, pack  # noqa: E402
     from dmpkg.cli import cmd_verify  # noqa: E402
+    from dmpkg.errors import PackError  # noqa: E402
 except ImportError:
     sys.exit("run_test: can't import dmpkg: pip install -e python or set "
              "PYTHONPATH=python/src (make test does)")
@@ -207,7 +208,7 @@ class MockSDC:
                 self.mounted = name
                 self.busy_until = self.now + 2000
                 img = self.files.get(name)
-                dsk = img is not None and len(img) >= dmpkg.MIN_IMAGE and len(img) % 256 == 0
+                dsk = img is not None and len(img) >= image.MIN_IMAGE and len(img) % 256 == 0
                 self.status = 0x00 if dsk else 0x80   # not found, or too small for a DSK
                 self.log.append(("mount", name))
             return v
@@ -418,7 +419,7 @@ def output_dirs_test():
         with open(os.path.join(td, "p.yaml"), "w") as f:
             yaml.safe_dump({"project": outs,
                             "assets": [{"name": "a", "file": "a.bin", "load": 0x4000}]}, f)
-        dmpkg.build(os.path.join(td, "p.yaml"))
+        pack.build(os.path.join(td, "p.yaml"))
         made = [p for p in outs.values() if os.path.isfile(os.path.join(td, p))]
     return check(len(made) == len(outs), f"output folders created for {made}")
 
@@ -501,7 +502,7 @@ def decb_word_fail_test():
                     "  equates: assets.inc\n  table: assettab.asm\n"
                     "assets:\n  - {name: pad, file: pad.bin, load: 0x6000}\n"
                     "  - {name: code, file: code.bin, type: decb}\n")
-        res = dmpkg.build(os.path.join(td, "p.yaml"))
+        res = pack.build(os.path.join(td, "p.yaml"))
         code = {a.name: a for a in res["assets"]}["CODE"]
         assert (code.block, code.off) == (1, 511), (code.block, code.off)
         with open(res["image"], "rb") as f:
@@ -588,16 +589,16 @@ def run_all(ex, src):
     # puts it on the disk
     man = os.path.join(ex, "project.yaml")
     build = os.path.join(ex, "build")
-    dmpkg.build(man)
+    pack.build(man)
     incs = [os.path.join(build, f) for f in ("assets.inc", "assettab.asm")]
     pass1 = [read(f) for f in incs]
     loader = lwasm(os.path.join(ROOT, "example", "loader.asm"),
                    os.path.join(build, "LOADER.BIN"), build, fmt="decb")
-    res = dmpkg.build(man)
+    res = pack.build(man)
     img = read(res["image"])
     A = {a.name: a for a in res["assets"]}
     chk([read(f) for f in incs] == pass1, "pass 2 writes the same include files")
-    chk(len(img) == dmpkg.DISK_BYTES, f"disk image is 35 tracks ({len(img)} bytes)")
+    chk(len(img) == decb.DISK_BYTES, f"disk image is 35 tracks ({len(img)} bytes)")
     chk(verify(res["image"]), "dmpkg verify passes on the disk image")
     files = disk_files(img)
     chk(sorted(files) == ["AUTOEXEC.BAS", "DMPKG.DAT", "LOADER.BIN"],
@@ -608,7 +609,7 @@ def run_all(ex, src):
 
     # the loader, read off the disk and run as LOADM would: no mount, every
     # asset streamed from the image it came from
-    segs, exe = dmpkg.parse_decb(files["LOADER.BIN"][2], "LOADER.BIN")
+    segs, exe = decb.parse_loadm(files["LOADER.BIN"][2], "LOADER.BIN")
     files_on_card = {"DEMO.DSK": img}
     m = Machine(files_on_card, mounted="DEMO.DSK")
     c0 = m.cpu.cycles
@@ -688,12 +689,12 @@ def run_all(ex, src):
     sman = os.path.join(ex, "sds.yaml")
     with open(sman, "w") as f:
         yaml.safe_dump(doc, f)
-    sres = dmpkg.build(sman)
+    sres = pack.build(sman)
     simg = read(sres["image"])
     chk([(a.block, a.off) for a in sres["assets"]] == [(a.block, a.off) for a in res["assets"]]
         and sres["build_id"] == res["build_id"],
         "stream image: same layout and build_id as the disk")
-    chk(len(simg) == dmpkg.MIN_IMAGE and simg[5] == 0, "stream image: 162 blocks, no disk flag")
+    chk(len(simg) == image.MIN_IMAGE and simg[5] == 0, "stream image: 162 blocks, no disk flag")
     prog, done = assemble(ex, build, "SDC_BuildID")
     m = Machine({"GAMES/DEMO.SDS": simg})
     m.run(prog, 0x1000, done)
@@ -705,7 +706,7 @@ def run_all(ex, src):
     m.run(prog, 0x1000, done)
     chk(m.peek(0x100, 1)[0] == EMOUNT, "missing file -> SDC_EMOUNT")
 
-    m = Machine({"GAMES/DEMO.SDS": simg[:dmpkg.MIN_IMAGE - 512]})
+    m = Machine({"GAMES/DEMO.SDS": simg[:image.MIN_IMAGE - 512]})
     m.run(prog, 0x1000, done)
     chk(m.peek(0x100, 1)[0] == EMOUNT, "image under 82,944 bytes -> SDC_EMOUNT")
 
@@ -765,21 +766,21 @@ def disk_layout_test():
         man = os.path.join(td, "p.yaml")
         with open(man, "w") as f:
             yaml.safe_dump(doc, f)
-        res = dmpkg.build(man)
+        res = pack.build(man)
         pos = {a.name: a.block * 512 + a.off for a in res["assets"]}
         img = read(res["image"])
         results.append(check(pos == {"BIG": 512, "NEXT": 82944, "GAPFILL": 70512,
                                      "HUGE": 102944},
                              f"first fit around track 17 {pos}"))
-        results.append(check(len(img) == dmpkg.HD_MIN,
-                             f"image past 720 sectors padded to {dmpkg.HD_MIN} bytes "
+        results.append(check(len(img) == decb.HD_MIN,
+                             f"image past 720 sectors padded to {decb.HD_MIN} bytes "
                              f"(got {len(img)})"))
         results.append(check(verify(res["image"]), "dmpkg verify passes"))
         files = disk_files(img)
         results.append(check(files["TINY.BIN"][2] == read(os.path.join(td, "tiny.bin"))
                              and "AUTOEXEC.BAS" in files,
                              "loader and AUTOEXEC.BAS fit in the granules left over"))
-        t17 = img[dmpkg.DIR_LO:dmpkg.DIR_HI]
+        t17 = img[decb.DIR_LO:decb.DIR_HI]
         results.append(check(t17[512:512 + 32].startswith(b"DMPKG   DAT"),
                              "track 17 holds the directory, no asset data"))
         prog = lwasm_src(LAYOUT_ASM, td)
@@ -794,16 +795,16 @@ def disk_layout_test():
         # a disk with no room left for the loader is an error
         doc["assets"] = [{"name": "fill", "file": "fill.bin", "phys": 0x100000}]
         with open(os.path.join(td, "fill.bin"), "wb") as f:
-            f.write(bytes(dmpkg.DISK_BYTES - dmpkg.DIR_HI))
+            f.write(bytes(decb.DISK_BYTES - decb.DIR_HI))
         doc["assets"].insert(0, {"name": "low", "file": "low.bin", "phys": 0})
         with open(os.path.join(td, "low.bin"), "wb") as f:
-            f.write(bytes(dmpkg.DIR_LO - 512))
+            f.write(bytes(decb.DIR_LO - 512))
         with open(man, "w") as f:
             yaml.safe_dump(doc, f)
         try:
-            dmpkg.build(man)
+            pack.build(man)
             full = None
-        except dmpkg.PackError as e:
+        except PackError as e:
             full = str(e)
         results.append(check(full and full.startswith("disk full"),
                              f"no granule left for the loader -> {full!r}"))
