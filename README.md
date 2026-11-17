@@ -1,6 +1,6 @@
 # dmpkg — project disc packer for the CoCo SDC STREAM protocol
 
-`dmpkg` packs all of a project's assets into a single **stream image** on the SD card. A small 6809 runtime (`asm/dmpkg.asm`, 962 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
+`dmpkg` packs all of a project's assets into a single **stream image** on the SD card. A small 6809 runtime (`asm/dmpkg.asm`, 966 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
 
 ```
 project.yaml ──► dmpkg build ───► build/DEMO.SDS      → SD card
@@ -103,7 +103,7 @@ Descriptor: `+0 block(3) +3 offset(2) +5 length(3) +8 flags(1) +9 dest(3)`. Flag
 
 | call | in | out |
 |---|---|---|
-| `sdc_open` | X = mount name, Y = build_id or 0 | firmware checked, stream parked after the build_id |
+| `sdc_open` | X = mount name, or 0 for the image already in `SDC_DRIVE`; Y = build_id or 0 | firmware checked, stream parked after the build_id |
 | `sdc_version` | — | D = firmware version in BCD (`$0124`), `0` if before 113; also in `sdc_ver` |
 | `sdc_load` | X = descriptor | asset loaded; U = exec for decb |
 | `sdc_getbyte` | — | A = next stream byte |

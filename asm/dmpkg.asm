@@ -6,7 +6,9 @@
 ; (mount name, header, 12-byte asset descriptors).
 ;
 ; Entry points
-;   sdc_open   X = mount name ("M:..." zero-terminated, e.g. SDC_MountName)
+;   sdc_open   X = mount name ("M:..." zero-terminated, e.g. SDC_MountName),
+;                  or 0 to use the image already in SDC_DRIVE (a dmpkg disk
+;                  image the loader was run from)
 ;              Y = expected 4-byte build_id (SDC_BuildID) or 0 to skip the check
 ;              Enters SDC command mode, checks the firmware supports STREAM
 ;              (VERSION >= SDC_MINVER), mounts the image, starts a stream at
@@ -171,7 +173,8 @@ sdc_ver         fdb     0       ; firmware version (BCD), set by sdc_version
 
 ;------------------------------------------------------------------------------
 ; Function    : sdc_open
-; Entry       : Reg X = mount name ("M:..." zero-terminated, e.g. SDC_MountName)
+; Entry       : Reg X = mount name ("M:..." zero-terminated, e.g. SDC_MountName),
+;             :         or 0 to stream the image already in SDC_DRIVE
 ;             :     Y = expected 4-byte build_id (SDC_BuildID), or 0 to skip it
 ; Exit        : CC.C clear: image mounted, stream parked after the build_id
 ;             : CC.C set  : A = error code (stream stopped)
@@ -179,9 +182,9 @@ sdc_ver         fdb     0       ; firmware version (BCD), set by sdc_version
 ; Calls       : sdc_version (sdc_stop with SDC_NOVERCHK), sdc_waitidle,
 ;             : sdc_waitready, sdc_start, sdc_getbyte, sdc_fail
 ; Description : Enters command mode, checks the firmware supports STREAM
-;             : (VERSION >= SDC_MINVER), mounts the image, starts a stream at
-;             : block 0 and compares the header's build_id (bytes 8-11) so a
-;             : stale image is caught.
+;             : (VERSION >= SDC_MINVER), mounts the image (unless X = 0),
+;             : starts a stream at block 0 and compares the header's build_id
+;             : (bytes 8-11) so a stale image is caught.
 ;------------------------------------------------------------------------------
 sdc_open
         pshs    b,x,y,u
@@ -200,6 +203,8 @@ sdc_open
         bra     @err
 @ver_ok
         endc
+        leax    ,x                      ; X = 0: no mount, the image is
+        beq     @mount_ok               ; already in SDC_DRIVE
         lda     #SDC_C_MOUNT
         sta     SDC_STAT
         jsr     sdc_waitready
