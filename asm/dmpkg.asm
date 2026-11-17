@@ -32,14 +32,14 @@
 ;              Returns the next stream byte in A.
 ;
 ; All return carry clear on success, or carry set and A = error code:
-;   SDC_EMOUNT  1  mount failed (status bit 7 after $E0)
-;   SDC_EHDR    2  build_id in block 0 doesn't match (stale or wrong image)
-;   SDC_EEOF    3  stream ended (BUSY dropped) before the data was read
-;   SDC_ETIME   4  controller didn't answer in time
-;   SDC_EFAIL   5  controller reported an error (FAILED, or the stream ended
+;   SDC_ENODEV  1  no CoCo SDC found
+;   SDC_EMOUNT  2  mount failed (status bit 7 after $E0)
+;   SDC_EHDR    3  build_id in block 0 doesn't match (stale or wrong image)
+;   SDC_EEOF    4  stream ended (BUSY dropped) before the data was read
+;   SDC_ETIME   5  controller didn't answer in time
+;   SDC_EFAIL   6  controller reported an error (FAILED, or the stream ended
 ;                  with status $08: card error)
-;   SDC_EVER    6  firmware too old for STREAM (sdc_ver holds its version)
-;   SDC_ENODEV  7  no CoCo SDC found
+;   SDC_EVER    7  firmware too old for STREAM (sdc_ver holds its version)
 ; On any error the stream is stopped. Registers other than A/CC are
 ; preserved, except B for sdc_init and sdc_version (they return D) and U
 ; for decb loads (exec address).
@@ -142,13 +142,13 @@ SDC_READY       equ     %00000010
 SDC_ERROR       equ     %00001000       ; set when a stream ends on an error
 
 ; error codes, returned in A with carry set
-SDC_EMOUNT      equ     1               ; mount failed (file not found?)
-SDC_EHDR        equ     2               ; build_id mismatch: stale image
-SDC_EEOF        equ     3               ; stream ended before the data
-SDC_ETIME       equ     4               ; controller didn't answer in time
-SDC_EFAIL       equ     5               ; controller reported an error
-SDC_EVER        equ     6               ; firmware older than SDC_MINVER
-SDC_ENODEV      equ     7               ; no CoCo SDC found
+SDC_ENODEV      equ     1               ; no CoCo SDC found
+SDC_EMOUNT      equ     2               ; mount failed (file not found?)
+SDC_EHDR        equ     3               ; build_id mismatch: stale image
+SDC_EEOF        equ     4               ; stream ended before the data
+SDC_ETIME       equ     5               ; controller didn't answer in time
+SDC_EFAIL       equ     6               ; controller reported an error
+SDC_EVER        equ     7               ; firmware older than SDC_MINVER
 
 SDC_F_PHYS      equ     $80
 SDC_F_DECB      equ     $40

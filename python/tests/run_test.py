@@ -57,6 +57,9 @@ sys.path.insert(0, os.path.join(ROOT, "example"))
 import mkassets  # noqa: E402
 
 LWASM = os.environ.get("LWASM", "lwasm")
+
+# runtime error codes (SDC_E* in asm/dmpkg.asm)
+ENODEV, EMOUNT, EHDR, EEOF, ETIME, EFAIL, EVER = range(1, 8)
 READY_LAG = 20          # cycles READY stays stale after a block is drained
 FILL_TIME = 400         # cycles to "read" the next block from the card
 CMD_SETTLE = 36         # 20us at 1.79MHz: no register access after a command
@@ -439,7 +442,7 @@ def init_test():
     c0 = m.cpu.cycles
     m.run(prog, 0x1000, 0x1002)
     cc, a = m.peek(0x100, 1)[0], m.peek(0x104, 1)[0]
-    results.append(check(cc & 1 and a == 7 and not m.sdc.log,
+    results.append(check(cc & 1 and a == ENODEV and not m.sdc.log,
                          f"sdc_init, no SDC -> SDC_ENODEV (A=${a:02X}, carry {cc & 1}, "
                          f"{m.cpu.cycles - c0} cycles, no command written)"))
     return all(results)
@@ -503,7 +506,7 @@ def decb_word_fail_test():
         m.sdc.fail_status = status
         m.run(prog, 0x1000, 0x1002)
         err = m.peek(0x100, 1)[0]
-        results.append(check(err == 5, f"decb word split across a failing block ({how}) "
+        results.append(check(err == EFAIL, f"decb word split across a failing block ({how}) "
                                        f"-> SDC_EFAIL (A=${err:02X})"))
         results.append(check(m.sdc.stream is None and ("abort",) in m.sdc.log,
                              "  stream stopped after the error"))
@@ -622,7 +625,7 @@ def run_all(ex, src):
     bprog, bdone = assemble(ex, build, "badid")
     m = Machine(files_on_card, mounted="DEMO.DSK")
     m.run(bprog, 0x1000, bdone)
-    chk(m.peek(0x100, 1) == b"\x02", "wrong build_id -> SDC_EHDR")
+    chk(m.peek(0x100, 1)[0] == EHDR, "wrong build_id -> SDC_EHDR")
 
     # ---- run 3: card hangs part way through TITLE (phys load): READY never
     # comes, so sdc_waitready times out. SDC_TIMEOUT=1 (65536 polls) keeps
@@ -633,7 +636,7 @@ def run_all(ex, src):
     c0 = m.cpu.cycles
     m.run(tprog, 0x1000, tdone, max_ops=50_000_000)
     err = m.peek(0x100, 1)[0]
-    chk(err == 4, f"card stalls in TITLE -> SDC_ETIME (A=${err:02X}, "
+    chk(err == ETIME, f"card stalls in TITLE -> SDC_ETIME (A=${err:02X}, "
                   f"{m.cpu.cycles - c0} cycles)")
     chk(m.mmu == 0x3A, "  MMU window restored after the error")
     chk(m.sdc.stream is None and ("abort",) in m.sdc.log, "  stream stopped after the error")
@@ -643,12 +646,12 @@ def run_all(ex, src):
     m = Machine(files_on_card, present=False)
     m.run(prog, 0x1000, done)
     err = m.peek(0x100, 1)[0]
-    chk(err == 7 and not m.sdc.log, f"no SDC -> SDC_ENODEV, no command written (A=${err:02X})")
+    chk(err == ENODEV and not m.sdc.log, f"no SDC -> SDC_ENODEV, no command written (A=${err:02X})")
 
     # ---- run 4-6: firmware version gate (117 added STREAM, 113 VERSION)
     for fw, want, what in ((0x0117, 0, "firmware 117 accepted"),
-                           (0x0116, 6, "firmware 116 -> SDC_EVER"),
-                           (0x0110, 6, "firmware before VERSION -> SDC_EVER")):
+                           (0x0116, EVER, "firmware 116 -> SDC_EVER"),
+                           (0x0110, EVER, "firmware before VERSION -> SDC_EVER")):
         m = Machine(files_on_card, firmware=fw, mounted="DEMO.DSK")
         m.run(prog, 0x1000, done)
         err = m.peek(0x100, 1)[0]
@@ -684,11 +687,11 @@ def run_all(ex, src):
 
     m = Machine({"OTHER.SDS": simg})
     m.run(prog, 0x1000, done)
-    chk(m.peek(0x100, 1) == b"\x01", "missing file -> SDC_EMOUNT")
+    chk(m.peek(0x100, 1)[0] == EMOUNT, "missing file -> SDC_EMOUNT")
 
     m = Machine({"GAMES/DEMO.SDS": simg[:dmpkg.MIN_IMAGE - 512]})
     m.run(prog, 0x1000, done)
-    chk(m.peek(0x100, 1) == b"\x01", "image under 82,944 bytes -> SDC_EMOUNT")
+    chk(m.peek(0x100, 1)[0] == EMOUNT, "image under 82,944 bytes -> SDC_EMOUNT")
 
     return all(results)
 
