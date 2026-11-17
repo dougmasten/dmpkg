@@ -137,6 +137,11 @@ SDC_ETIME       equ     4               ; controller didn't answer in time
 SDC_EFAIL       equ     5               ; controller reported an error
 SDC_EVER        equ     6               ; firmware older than SDC_MINVER
 
+; skip2: CMPX # opcode, swallows the next 2-byte instruction (changes CC)
+skip2           macro
+                fcb     $8C
+                endm
+
 SDC_F_PHYS      equ     $80
 SDC_F_DECB      equ     $40
 
@@ -546,25 +551,25 @@ sdc_waitready
         lda     #SDC_TIMEOUT
         sta     sdc_tmo
         ldx     #0
-@lp     lda     SDC_STAT
+@loop   lda     SDC_STAT
         bmi     @fail
         bita    #SDC_READY
         bne     @ok
         bita    #SDC_BUSY
         beq     @eof
         leax    -1,x
-        bne     @lp
+        bne     @loop
         dec     sdc_tmo
-        bne     @lp
+        bne     @loop
         lda     #SDC_ETIME              ; ERROR CODE: READY timeout
-        bra     @err
+        skip2                           ; skip the lda below
 @fail   lda     #SDC_EFAIL              ; ERROR CODE: SDC reported FAILED
-        bra     @err
+@err    orcc    #1                      ; set carry (error)
+        puls    x,pc
 @eof    bita    #SDC_ERROR              ; firmware ends a failed stream with
         bne     @fail                   ; $08 (no FAILED bit), a clean one $00
         lda     #SDC_EEOF               ; ERROR CODE: end of file
-@err    orcc    #1                      ; set carry (error)
-        puls    x,pc
+        bra     @err
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    x,pc
 
