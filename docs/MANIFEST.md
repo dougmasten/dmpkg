@@ -87,7 +87,7 @@ Output folders (for `image`, `equates`, `table` and `map`) are created if they d
 | `loader` | none | LOADM (DECB binary) file to put on the disk, under its own file name. The name must be a valid DECB 8.3 name (letters, digits and `_$#!&@%^()'{}~-`); it's upper-cased on the disk. The file must be a well-formed LOADM file. |
 | `autoexec` | `true` with a `loader`, else `false` | Also write `AUTOEXEC.BAS` (ASCII BASIC: `10 LOADM"LOADER.BIN":EXEC`, with the loader's name), which SDC-DOS runs at power-on. Needs a `loader`. |
 
-The loader is built in two passes. `dmpkg build --no-loader` leaves the loader (and `AUTOEXEC.BAS`) off the disk; the loader is assembled against the include files that pass writes, then a plain `dmpkg build` puts it on the disk. Without `--no-loader`, a missing `loader` file isn't an error either: dmpkg prints a note and writes the disk without it. Asset placement and the build_id don't depend on the loader, so the second pass writes the same include files. See [Single-file disk image](../README.md#single-file-disk-image).
+The loader is built in two passes. `dmpkg build --no-loader` leaves the loader (and `AUTOEXEC.BAS`) off the disk; the loader is assembled against the include files that pass writes, then a plain `dmpkg build` puts it on the disk. Without `--no-loader`, a missing `loader` file isn't an error either: dmpkg prints a note and writes the disk without it. Asset placement and the build_id don't depend on the loader, so the second pass writes the same include files. See [DISK.md](DISK.md).
 
 ## `assets`
 

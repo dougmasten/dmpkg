@@ -12,5 +12,5 @@ dmpkg list   IMAGE
 ```
 
 `python -m dmpkg` works too. The manifest, the image format and the runtime
-are described in the repo's [README](../README.md) and
-[docs/FORMAT.md](../docs/FORMAT.md). License: zlib, see [LICENSE](../LICENSE).
+are described in [../docs/](../docs/): [MANIFEST.md](../docs/MANIFEST.md),
+[RUNTIME.md](../docs/RUNTIME.md) and [FORMAT.md](../docs/FORMAT.md). License: zlib, see [LICENSE](../LICENSE).
