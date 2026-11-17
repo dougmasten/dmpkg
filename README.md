@@ -83,7 +83,7 @@ assets:
 ```
 
 - **Numbers:** a YAML int (`0x6000`, `24576`) or a string (`"$6000"`, `"&H6000"`, `"%1010"`). An unquoted `$6000` also works, because YAML reads it as text.
-- **Layout:** assets are packed back to back, each starting on the byte after the previous one ends. `align: true` starts an asset on a fresh 512-byte block instead, with the gap filled with `pad_byte`. Assets you load in image order come in one stream with no restart. Out of order, `sdc_load` restarts at the asset's block and skips to its offset, which costs well under a millisecond, so `align` mostly matters if you want block-aligned data.
+- **Layout:** first fit in manifest order. Each asset takes the first free space it fits in, so assets normally follow each other back to back. `align: true` starts an asset on a fresh 512-byte block instead, and a later asset small enough to fit goes in the gap that leaves (the example's CODE sits in the gap before TITLE). Assets you load in image order come in one stream with no restart. Out of order, `sdc_load` restarts at the asset's block and skips to its offset, which costs a STREAM command and a card seek, so `align` mostly matters if you want block-aligned data. The map report and `dmpkg list` show where everything went.
 - **Validation:** unknown keys, overlapping `load`/`phys`, loads that run past `$FFFF` or 2MB, bad 8.3 names and malformed DECB files are all errors.
 
 ## Generated symbols
@@ -144,7 +144,7 @@ header: "DMPK" ver(1) flags(1) count(2) build_id(4) blocks(3) toc_blocks(1) name
 entry:  descriptor(12) crc32(4)
 ```
 
-`build_id` is a CRC-32 of the TOC plus all asset blocks, so the same content always gives the same ID. `sdc_open` compares the image's `build_id` with `SDC_BuildID` from `assettab.asm`, so a program built against a different image fails with error 2 instead of loading garbage. The image is padded to whole blocks and to at least `$14400` bytes (82,944). That's the smallest disk image the SDC's `M:` mount accepts according to the User Guide; STREAM itself has no limit. The full byte-level spec is in [docs/FORMAT.md](docs/FORMAT.md).
+`build_id` is a CRC-32 of the TOC entries. They hold each asset's place, size, destination and CRC, so the same content always gives the same ID and any change to an asset gives a new one. `sdc_open` compares the image's `build_id` with `SDC_BuildID` from `assettab.asm`, so a program built against a different image fails with error 2 instead of loading garbage. The image is padded to whole blocks and to at least `$14400` bytes (82,944). That's the smallest disk image the SDC's `M:` mount accepts according to the User Guide; STREAM itself has no limit. The full byte-level spec is in [docs/FORMAT.md](docs/FORMAT.md).
 
 ## Tests
 

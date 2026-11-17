@@ -279,7 +279,7 @@ start
         ldx     #MAP                packed behind LEVEL1, no restart expected
         jsr     sdc_load
         lbcs    fail
-        ldx     #CODE               decb at offset 33, returns exec in U
+        ldx     #CODE               decb, in TITLE's align gap behind MAP: no restart
         jsr     sdc_load
         lbcs    fail
         stu     $0102
@@ -431,7 +431,7 @@ def run_all(ex, src):
         chk(m.peek(addr, len(data)) == data, f"CODE segment ${addr:04X} ({len(data)} bytes)")
     chk(m.peek(0x102, 2) == b"\x30\x00", "decb exec returned in U")
     starts = [e for e in m.sdc.log if e[0] == "stream"]
-    chk(starts == [("stream", 0), ("stream", 1), ("stream", 10), ("stream", 2), ("stream", 49), ("stream", 2)],
+    chk(starts == [("stream", 0), ("stream", 1), ("stream", 10), ("stream", 2), ("stream", 2)],
           f"stream restarts only where needed {starts}")
     chk(m.peek(0x6400, 16) == src["palette.bin"],
           "PALETTE reloaded out of order (seek + skip 255 bytes)")

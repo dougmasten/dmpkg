@@ -45,7 +45,7 @@ def cmd_verify(path) -> bool:
             print(f"asset {i}: CRC mismatch")
             ok = False
     toc = img[HDR_SIZE:HDR_SIZE + TOC_ENTRY * h["count"]]
-    if zlib.crc32(toc + img[h["toc_blocks"] * BLOCK:]) != h["build_id"]:
+    if zlib.crc32(toc) != h["build_id"]:
         print("build id mismatch")
         ok = False
     print("OK" if ok else "FAILED")

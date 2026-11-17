@@ -7,7 +7,7 @@ This is the on-card layout written by `dmpkg build` and read by `asm/dmpkg.asm` 
 ```
 block 0 ..          header (32 bytes) + TOC (16 bytes × count), zero-padded
                     to a whole number of blocks  → toc_blocks blocks
-block toc_blocks .. asset data, in manifest order
+block toc_blocks .. asset data, placed first-fit in manifest order
 ...                 pad_byte fill up to a whole block and to min_size
 ```
 
@@ -34,7 +34,7 @@ block toc_blocks .. asset data, in manifest order
 | 15 | 1 | toc_blocks | blocks used by header + TOC (1–255); first data block |
 | 16 | 16 | name | project name, ASCII, space-padded, not terminated |
 
-`sdc_open` compares `build_id` (bytes 8–11) against `SDC_BuildID` from the generated `assettab.asm`, so a program built against a different image fails with error 2. The other header fields aren't checked: the TOC and data are already covered by `build_id`.
+`sdc_open` compares `build_id` (bytes 8–11) against `SDC_BuildID` from the generated `assettab.asm`, so a program built against a different image fails with error 2. The other header fields aren't checked: the TOC, and through its CRCs the data, are already covered by `build_id`.
 
 ## TOC entry (16 bytes)
 
@@ -63,7 +63,7 @@ With neither PHYS nor DECB set, `dest` is a 16-bit CPU address held in 3 bytes (
 
 ## Asset data
 
-- **Alignment:** assets are packed: each starts on the byte right after the previous asset ends, at any offset. An asset marked `align: true` starts on a fresh block (`offset = 0`) instead, and the gap before it is filled with `pad_byte`. The first asset always starts at the first data block, offset 0.
+- **Placement:** first fit, in manifest order. Each asset takes the first free space it fits in, at any offset, so assets normally follow each other back to back. An asset marked `align: true` starts on a fresh block (`offset = 0`) instead. The gap that leaves stays free, and a later asset small enough to fit goes there, so image order can differ from manifest order. Unused bytes are `pad_byte`. The first asset always starts at the first data block, offset 0.
 - **Raw:** the file's bytes, unchanged.
 - **DECB:** a LOADM binary is re-encoded as a record stream that `sdc_load` follows:
 
@@ -79,7 +79,7 @@ With neither PHYS nor DECB set, `dest` is a 16-bit CPU address held in 3 bytes (
 All CRCs are standard CRC-32 (IEEE 802.3, reflected, init/xorout `$FFFFFFFF`; Python `zlib.crc32`).
 
 - **Entry crc32:** the CRC of the `length` stored bytes at the asset's offset.
-- **build_id:** the CRC of the TOC entries (`count × 16` bytes, not the header and not the TOC padding) followed by every byte from block `toc_blocks` to the end of the file, padding included. The same inputs always give the same ID.
+- **build_id:** the CRC of the TOC entries (`count × 16` bytes, not the header and not the TOC padding). Each entry holds its asset's place, length, flags, destination and CRC, so any change to an asset changes the ID, while padding doesn't. The same inputs always give the same ID.
 
 `dmpkg verify` checks the file size against `blocks` and `min_size`, recomputes every entry CRC, and recomputes `build_id`.
 
@@ -90,12 +90,12 @@ The runtime mounts the image with the string in `SDC_MountName`: `M:` followed b
 ## Worked example (`example/build/DEMO.SDS`)
 
 ```
-00000000: 44 4d 50 4b 01 00 00 06 d1 d5 86 ce 00 00 a2 01  DMPK............
+00000000: 44 4d 50 4b 01 00 00 06 36 83 22 08 00 00 a2 01  DMPK....6.".....
 00000010: 44 65 6d 6f 20 20 20 20 20 20 20 20 20 20 20 20  Demo
 00000020: 00 00 01 00 00 00 02 ff 00 00 60 00 1d a2 53 d6  FONT    blk 1 off 0 len 767 cpu $6000
 00000030: 00 00 02 00 ff 00 00 10 00 00 64 00 73 1d bb 74  PALETTE blk 2 off 255 (packed after FONT)
 00000060: 00 00 0a 00 00 00 4e 21 80 07 a0 01 9f b5 25 a3  TITLE   blk 10 off 0 (align: true), flags $80 phys $07A001
-00000070: 00 00 31 00 21 00 01 86 40 00 00 00 c6 fb 89 72  CODE    blk 49 off 33, flags $40 decb
+00000070: 00 00 09 00 6b 00 01 86 40 00 00 00 c6 fb 89 72  CODE    blk 9 off 107 (in TITLE's align gap), flags $40 decb
 ```
 
-Version 1, 6 assets, build `$D1D586CE`, 162 blocks (`$A2`), 1 TOC block.
+Version 1, 6 assets, build `$36832208`, 162 blocks (`$A2`), 1 TOC block.

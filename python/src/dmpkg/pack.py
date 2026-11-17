@@ -90,6 +90,20 @@ def sdc_name(path: str) -> str:
     return out
 
 
+def first_fit(free: list, n: int, align: bool) -> int:
+    """Take n bytes from the first free [lo, hi) range they fit in (hi None:
+    open-ended), block-aligned if asked. The leftover pieces stay free."""
+    for i, (lo, hi) in enumerate(free):
+        p = -(-lo // BLOCK) * BLOCK if align else lo
+        if hi is None or p + n <= hi:
+            rest = [(lo, p)] if p > lo else []
+            if hi is None or p + n < hi:
+                rest.append((p + n, hi))
+            free[i:i + 1] = rest
+            return p
+    raise AssertionError("the last free range is open-ended")
+
+
 def parse_decb(raw: bytes, src: str):
     """Parse a DECB LOADM binary into (segments, exec)."""
     segs, i = [], 0
@@ -255,19 +269,18 @@ def build(manifest: str, verbose=False) -> dict:
             raise PackError(f"{where}: over 16MB")
         assets.append(asset)
 
-
-    # ---- layout: header + TOC, then assets
+    # ---- layout: header + TOC at block 0, then assets first-fit in manifest
+    # order: each takes the first free space it fits, so a small asset can
+    # fill an align gap left earlier
     toc_bytes = HDR_SIZE + TOC_ENTRY * len(assets)
     toc_blocks = -(-toc_bytes // BLOCK)
     if toc_blocks > 255:
         raise PackError("too many assets for the TOC")
-    pos = toc_blocks * BLOCK
+    data0 = toc_blocks * BLOCK
+    free = [(data0, None)]
     for a in assets:
-        if a.align and pos % BLOCK:          # the first asset starts block-aligned anyway
-            pos += BLOCK - pos % BLOCK
-        a.block, a.off = divmod(pos, BLOCK)
-        pos += len(a.data)
-    end = pos
+        a.block, a.off = divmod(first_fit(free, len(a.data), a.align), BLOCK)
+    end = max(a.block * BLOCK + a.off + len(a.data) for a in assets)
     size = max(-(-end // BLOCK) * BLOCK, -(-min_size // BLOCK) * BLOCK)
     blocks = size // BLOCK
     if blocks > MAX_BLOCKS:
@@ -278,16 +291,18 @@ def build(manifest: str, verbose=False) -> dict:
         p = a.block * BLOCK + a.off
         img[p:p + len(a.data)] = a.data
 
+    # build_id: CRC of the TOC entries, which hold each asset's place, size,
+    # destination and CRC, so it changes whenever any of them does
     toc = bytearray()
     for a in assets:
         toc += a.descriptor() + struct.pack(">I", zlib.crc32(a.data))
-    build_id = zlib.crc32(bytes(toc) + bytes(img[toc_blocks * BLOCK:]))
+    build_id = zlib.crc32(bytes(toc))
     hdr = (MAGIC + bytes([VERSION, 0]) + struct.pack(">H", len(assets))
            + struct.pack(">I", build_id) + blocks.to_bytes(3, "big") + bytes([toc_blocks])
            + name.encode("ascii", "replace")[:16].ljust(16, b" "))
     assert len(hdr) == HDR_SIZE
     img[0:toc_bytes] = hdr + toc
-    img[toc_bytes:toc_blocks * BLOCK] = bytes(toc_blocks * BLOCK - toc_bytes)
+    img[toc_bytes:data0] = bytes(data0 - toc_bytes)
 
     # ---- write outputs
     out_image = rel(image)
@@ -322,7 +337,7 @@ def build(manifest: str, verbose=False) -> dict:
           f"{P}SDC_MountName", f"        fcn     'M:{mount}'",
           "", f"{P}SDC_BuildID     ; header build_id (bytes 8-11), checked by sdc_open"]
     tb.append(f"        fqb     ${build_id:08X}")
-    tb += ["", "; asset descriptors, in image order: ldx #NAME / jsr sdc_load"]
+    tb += ["", "; asset descriptors, in manifest order: ldx #NAME / jsr sdc_load"]
     lw = max(8, max(len(P + a.name) for a in assets) + 1)   # opcode column: 8, or past the longest name
     for a in assets:
         tb.append(f"{P + a.name:<{lw}}fcb     " + ",".join(f"${b:02X}" for b in a.descriptor()))
