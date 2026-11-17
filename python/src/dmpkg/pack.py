@@ -299,6 +299,12 @@ def build(manifest: str, verbose=False) -> dict:
     proj, raw_assets = load_manifest(manifest)
     rel = lambda p: os.path.join(base, p)
 
+    def out(p):
+        """Output path relative to the manifest, its folder created."""
+        path = rel(p)
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        return path
+
     name = str(proj.get("name", "PROJECT"))
     image = proj.get("image")
     if not image:
@@ -469,8 +475,7 @@ def build(manifest: str, verbose=False) -> dict:
         disk_files = write_disk(img, used, files)
 
     # ---- write outputs
-    out_image = rel(image)
-    os.makedirs(os.path.dirname(out_image) or ".", exist_ok=True)
+    out_image = out(image)
     with open(out_image, "wb") as f:
         f.write(img)
 
@@ -511,7 +516,7 @@ def build(manifest: str, verbose=False) -> dict:
     for key, lines in (("equates", eq), ("table", tb)):
         p = proj.get(key)
         if p:
-            with open(rel(p), "w", encoding="ascii", newline="\n") as f:
+            with open(out(p), "w", encoding="ascii", newline="\n") as f:
                 f.write("\n".join(lines).rstrip("\n") + "\n")
 
     report = [f"dmpkg: {name}  ->  {image}",
@@ -542,7 +547,7 @@ def build(manifest: str, verbose=False) -> dict:
         cells = [v.rjust(w) if rj else v.ljust(w) for v, w, rj in zip(r, width, right)]
         report.append(("  " + "  ".join(cells)).rstrip())
     if proj.get("map"):
-        with open(rel(proj["map"]), "w", encoding="utf-8") as f:
+        with open(out(proj["map"]), "w", encoding="utf-8") as f:
             f.write("\n".join(report) + "\n")
     if verbose:
         print("\n".join(report))

@@ -408,6 +408,21 @@ def assemble(src_dir, build_dir, hdr_label, defines=()):
         return f.read(), 0x1002
 
 
+def output_dirs_test():
+    """Every output's folder is created, not just the image's."""
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "a.bin"), "wb") as f:
+            f.write(bytes(300))
+        outs = {"image": "img/G.SDS", "equates": "inc/deep/assets.inc",
+                "table": "tab/assettab.asm", "map": "reports/G.map"}
+        with open(os.path.join(td, "p.yaml"), "w") as f:
+            yaml.safe_dump({"project": outs,
+                            "assets": [{"name": "a", "file": "a.bin", "load": 0x4000}]}, f)
+        dmpkg.build(os.path.join(td, "p.yaml"))
+        made = [p for p in outs.values() if os.path.isfile(os.path.join(td, p))]
+    return check(len(made) == len(outs), f"output folders created for {made}")
+
+
 INIT_ASM = r"""
         org     $1000
         bra     start
@@ -522,6 +537,7 @@ def main():
         ok = run_all(ex, src)
         ok &= disk_layout_test()
         ok &= init_test()
+        ok &= output_dirs_test()
         ok &= decb_word_fail_test()
     print("ALL PASS" if ok else "SOME FAILED")
     return 0 if ok else 1
