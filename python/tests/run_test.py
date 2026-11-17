@@ -17,7 +17,15 @@ The SDC model enforces the protocol as documented and raises on misuse:
     READY (a hung card), so the runtime must time out
   - VERSION ($C0 'V') answers in BCD, or FAILS on firmware before 113;
     STREAM is rejected on firmware before 117
+  - mounted=: an image already in drive 0, as when the loader came off it
+
+The example builds as a single-file DECB disk: its loader is assembled and
+put on the disk, then read back through the DECB directory and run. The
+same manifest without disk: covers the bare stream image and the mount
+path. A synthetic disk checks first-fit packing around track 17.
 """
+import contextlib
+import io
 import logging
 import os
 import random
@@ -25,6 +33,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+import yaml
 
 logging.disable(logging.CRITICAL)
 from MC6809.components.cpu6809 import CPU
@@ -34,7 +44,8 @@ from MC6809.tests.test_config import TestCfg
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))      # repo root: python/tests -> .
 try:
-    import dmpkg.pack as dmpkg  # noqa: E402
+    from dmpkg import pack as dmpkg  # noqa: E402
+    from dmpkg.cli import cmd_verify  # noqa: E402
 except ImportError:
     sys.exit("run_test: can't import dmpkg: pip install -e python or set "
              "PYTHONPATH=python/src (make test does)")
@@ -52,7 +63,7 @@ class SDCError(Exception):
 
 
 class MockSDC:
-    def __init__(self, cpu, files, firmware=0x0127):
+    def __init__(self, cpu, files, firmware=0x0127, mounted=None):
         self.cpu, self.files = cpu, files
         self.firmware = firmware      # BCD, e.g. 0x0127
         self.version_reply = None     # bytes readable at $FF4A/$FF4B
@@ -63,7 +74,7 @@ class MockSDC:
         self.cmdmode = False
         self.params = [0, 0, 0]
         self.status = 0
-        self.mounted = None
+        self.mounted = mounted        # image already in drive 0
         self.collect = None           # bytes being written for $E0
         self.stream = None            # dict while streaming
         self.busy_until = 0
@@ -210,13 +221,13 @@ class MockSDC:
 
 
 class Machine:
-    def __init__(self, files, firmware=0x0127):
+    def __init__(self, files, firmware=0x0127, mounted=None):
         cfg = TestCfg({"verbosity": None, "display_cycle": False, "trace": None,
                        "bus_socket_host": None, "bus_socket_port": None, "ram": None,
                        "rom": None, "max_ops": None, "use_bus": False})
         self.mem = Memory(cfg)
         self.cpu = CPU(self.mem, cfg)
-        self.sdc = MockSDC(self.cpu, files, firmware)
+        self.sdc = MockSDC(self.cpu, files, firmware, mounted)
         self.phys = bytearray(0x200000)
         self.mmu = 0x3A                       # arbitrary home block for $4000
         m = self.mem
@@ -250,6 +261,21 @@ class Machine:
                 return
             self.cpu.get_and_call_next_op()
         raise RuntimeError("program did not finish")
+
+    def call(self, segs, entry, max_ops=20_000_000):
+        """LOADM-style: load (addr, data) segments, jsr entry, stop at its rts."""
+        for addr, data in segs:
+            self.mem.load(addr, data)
+        ret = 0x0F80
+        self.mem.load(ret, b"\x20\xfe")              # bra * (never reached)
+        self.cpu.system_stack_pointer.set(0x0EFE)
+        self.mem.load(0x0EFE, ret.to_bytes(2, "big"))
+        self.cpu.program_counter.set(entry)
+        for _ in range(max_ops):
+            if self.cpu.program_counter.value == ret:
+                return self.cpu.accu_a.value
+            self.cpu.get_and_call_next_op()
+        raise RuntimeError("program did not return")
 
     def peek(self, a, n):
         return bytes(self.mem.read_byte(a + i) for i in range(n))
@@ -303,6 +329,41 @@ fail    sta     $0100
         include "assettab.asm"
 badid   fcb     $12,$34,$56,$78
 """
+
+
+def lwasm(src, out, inc_dir, fmt="raw", defines=()):
+    subprocess.run([LWASM, "--6809", f"--format={fmt}", "-o", out,
+                    *[f"-D{d}" for d in defines],
+                    "-I", os.path.join(ROOT, "asm"), "-I", inc_dir, src], check=True)
+    with open(out, "rb") as f:
+        return f.read()
+
+
+def disk_files(img):
+    """Independent DECB reader: {name.ext: (type, ascii, bytes)} via the
+    directory (track 17 sectors 3-11) and the FAT (sector 2)."""
+    t17 = 17 * 18 * 256
+    fat = img[t17 + 256:t17 + 256 + 68]
+    out = {}
+    for d in range(t17 + 512, t17 + 11 * 256, 32):
+        e = img[d:d + 32]
+        if e[0] in (0x00, 0xFF):
+            if e[0] == 0xFF:
+                break
+            continue
+        data, g = b"", e[13]
+        while True:
+            trk = g // 2 + (g // 2 >= 17)
+            off = trk * 18 * 256 + (g % 2) * 9 * 256
+            if fat[g] >= 0xC0:
+                n = (fat[g] - 0xC1) * 256 + int.from_bytes(e[14:16], "big")
+                data += img[off:off + n]
+                break
+            data += img[off:off + 9 * 256]
+            g = fat[g]
+        name = e[0:8].decode().rstrip() + "." + e[8:11].decode().rstrip()
+        out[name] = (e[11], e[12], data)
+    return out
 
 
 def assemble(src_dir, build_dir, hdr_label, defines=()):
@@ -390,6 +451,7 @@ def main():
         shutil.copy(os.path.join(ROOT, "example", "project.yaml"), ex)
         src = mkassets.make(os.path.join(ex, "assets"), seed)
         ok = run_all(ex, src)
+        ok &= disk_layout_test()
         ok &= decb_word_fail_test()
     print("ALL PASS" if ok else "SOME FAILED")
     return 0 if ok else 1
@@ -400,65 +462,106 @@ def check(cond, msg):
     return bool(cond)
 
 
+def check_assets(m, src, A, chk, pre=""):
+    chk(m.peek(0x6000, 767) == src["font.bin"], pre + "FONT bytes")
+    chk(m.peek(0x6400, 16) == src["palette.bin"], pre + "PALETTE bytes (packed, odd offset)")
+    chk(m.peek(0x6500, 1500) == src["level1.bin"], pre + "LEVEL1 bytes")
+    chk(m.peek(0x7000, 1920) == src["map.bin"], pre + "MAP bytes")
+    t = src["title.gfx"]
+    chk(bytes(m.phys[0x7A001:0x7A001 + len(t)]) == t,
+        pre + "TITLE in physical RAM across MMU windows")
+    chk(m.phys[0x7A000] == 0 and m.phys[0x7A001 + len(t)] == 0, pre + "TITLE no overrun either side")
+    chk(m.mmu == 0x3A, pre + "MMU window restored")
+    for addr, data in A["CODE"].segs:
+        chk(m.peek(addr, len(data)) == data, pre + f"CODE segment ${addr:04X} ({len(data)} bytes)")
+
+
+def verify(path):
+    """dmpkg verify, its report kept for failures only."""
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        ok = cmd_verify(path)
+    if not ok:
+        print(buf.getvalue(), end="")
+    return ok
+
+
+def read(path):
+    with open(path, "rb") as f:
+        return f.read()
+
+
 def run_all(ex, src):
-    res = dmpkg.build(os.path.join(ex, "project.yaml"))
-    build = os.path.join(ex, "build")
-    with open(res["image"], "rb") as f:
-        img = f.read()
-    files = {"GAMES/DEMO.SDS": img}
-    A = {a.name: a for a in res["assets"]}
     results = []
 
     def chk(cond, msg):
         results.append(check(cond, msg))
 
-    # ---- run 1: full load
+    # ---- single-file disk, built the way the Makefile does it: pass 1
+    # writes the include files, the loader is assembled against them, pass 2
+    # puts it on the disk
+    man = os.path.join(ex, "project.yaml")
+    build = os.path.join(ex, "build")
+    dmpkg.build(man)
+    incs = [os.path.join(build, f) for f in ("assets.inc", "assettab.asm")]
+    pass1 = [read(f) for f in incs]
+    loader = lwasm(os.path.join(ROOT, "example", "loader.asm"),
+                   os.path.join(build, "LOADER.BIN"), build, fmt="decb")
+    res = dmpkg.build(man)
+    img = read(res["image"])
+    A = {a.name: a for a in res["assets"]}
+    chk([read(f) for f in incs] == pass1, "pass 2 writes the same include files")
+    chk(len(img) == dmpkg.DISK_BYTES, f"disk image is 35 tracks ({len(img)} bytes)")
+    chk(verify(res["image"]), "dmpkg verify passes on the disk image")
+    files = disk_files(img)
+    chk(sorted(files) == ["AUTOEXEC.BAS", "DMPKG.DAT", "LOADER.BIN"],
+        f"DECB directory {sorted(files)}")
+    chk(files["LOADER.BIN"] == (2, 0x00, loader), "LOADER.BIN reads back intact (ML, binary)")
+    chk(files["AUTOEXEC.BAS"] == (0, 0xFF, b'10 LOADM"LOADER.BIN":EXEC\r'),
+        "AUTOEXEC.BAS runs the loader (BASIC, ASCII)")
+
+    # the loader, read off the disk and run as LOADM would: no mount, every
+    # asset streamed from the image it came from
+    segs, exe = dmpkg.parse_decb(files["LOADER.BIN"][2], "LOADER.BIN")
+    files_on_card = {"DEMO.DSK": img}
+    m = Machine(files_on_card, mounted="DEMO.DSK")
+    c0 = m.cpu.cycles
+    err = m.call(segs, exe)
+    print(f"loader: {m.cpu.cycles - c0} cycles, SDC log {m.sdc.log}")
+    chk(err == 0, f"loader from the disk: no error (A=${err:02X})")
+    check_assets(m, src, A, chk, "  ")
+    starts = [e[1] for e in m.sdc.log if e[0] == "stream"]
+    chk(not any(e[0] == "mount" for e in m.sdc.log) and starts == [0, 1, 10],
+        f"  no mount; one restart, for aligned TITLE {starts}")
+    chk(m.sdc.stream is None and not m.sdc.cmdmode, "  closed, back in emulation mode")
+
+    # ---- run 1: full load, out of image order, on the mounted disk
     prog, done = assemble(ex, build, "SDC_BuildID")
-    m = Machine(files)
+    m = Machine(files_on_card, mounted="DEMO.DSK")
     c0 = m.cpu.cycles
     m.run(prog, 0x1000, done)
     print(f"run 1: {m.cpu.cycles - c0} cycles, SDC log {m.sdc.log}")
     chk(m.peek(0x100, 1) == b"\0", f"no error (A=${m.peek(0x100,1)[0]:02X})")
-    chk(m.peek(0x6000, 767) == src["font.bin"], "FONT bytes")
-    chk(m.peek(0x6400, 16) == src["palette.bin"], "PALETTE bytes (packed, odd offset)")
-    chk(m.peek(0x6500, 1500) == src["level1.bin"], "LEVEL1 bytes")
-    chk(m.peek(0x7000, 1920) == src["map.bin"], "MAP bytes")
-    t = src["title.gfx"]
-    chk(bytes(m.phys[0x7A001:0x7A001 + len(t)]) == t, "TITLE in physical RAM across MMU windows")
-    chk(m.phys[0x7A000] == 0 and m.phys[0x7A001 + len(t)] == 0, "TITLE no overrun either side")
-    chk(m.mmu == 0x3A, "MMU window restored")
-    for addr, data in A["CODE"].segs:
-        chk(m.peek(addr, len(data)) == data, f"CODE segment ${addr:04X} ({len(data)} bytes)")
+    check_assets(m, src, A, chk)
     chk(m.peek(0x102, 2) == b"\x30\x00", "decb exec returned in U")
     starts = [e for e in m.sdc.log if e[0] == "stream"]
     chk(starts == [("stream", 0), ("stream", 1), ("stream", 10), ("stream", 2), ("stream", 2)],
-          f"stream restarts only where needed {starts}")
+        f"stream restarts only where needed {starts}")
     chk(m.peek(0x6400, 16) == src["palette.bin"],
-          "PALETTE reloaded out of order (seek + skip 255 bytes)")
+        "PALETTE reloaded out of order (seek + skip 255 bytes)")
     chk(m.sdc.stream is None and not m.sdc.cmdmode, "closed, back in emulation mode")
 
     # ---- run 2: stale-image build_id check
-    prog, done = assemble(ex, build, "badid")
-    m = Machine(files)
-    m.run(prog, 0x1000, done)
+    bprog, bdone = assemble(ex, build, "badid")
+    m = Machine(files_on_card, mounted="DEMO.DSK")
+    m.run(bprog, 0x1000, bdone)
     chk(m.peek(0x100, 1) == b"\x02", "wrong build_id -> SDC_EHDR")
 
-    # ---- run 3: missing image
-    prog, done = assemble(ex, build, "SDC_BuildID")
-    m = Machine({"OTHER.SDS": img})
-    m.run(prog, 0x1000, done)
-    chk(m.peek(0x100, 1) == b"\x01", "missing file -> SDC_EMOUNT")
-
-    # ---- run 3b: image one block under the DSK minimum
-    m = Machine({"GAMES/DEMO.SDS": img[:dmpkg.MIN_IMAGE - 512]})
-    m.run(prog, 0x1000, done)
-    chk(m.peek(0x100, 1) == b"\x01", "image under 82,944 bytes -> SDC_EMOUNT")
-
-    # ---- run 3c: card hangs part way through TITLE (phys load): READY never
+    # ---- run 3: card hangs part way through TITLE (phys load): READY never
     # comes, so sdc_waitready times out. SDC_TIMEOUT=1 (65536 polls) keeps
     # the run short; the MMU window must be put back even on the error.
     tprog, tdone = assemble(ex, build, "SDC_BuildID", defines=["SDC_TIMEOUT=1"])
-    m = Machine(files)
+    m = Machine(files_on_card, mounted="DEMO.DSK")
     m.sdc.stall_block = A["TITLE"].block + 1
     c0 = m.cpu.cycles
     m.run(tprog, 0x1000, tdone, max_ops=50_000_000)
@@ -473,7 +576,7 @@ def run_all(ex, src):
     for fw, want, what in ((0x0117, 0, "firmware 117 accepted"),
                            (0x0116, 6, "firmware 116 -> SDC_EVER"),
                            (0x0110, 6, "firmware before VERSION -> SDC_EVER")):
-        m = Machine(files, firmware=fw)
+        m = Machine(files_on_card, firmware=fw, mounted="DEMO.DSK")
         m.run(prog, 0x1000, done)
         err = m.peek(0x100, 1)[0]
         ver = int.from_bytes(m.peek(0x104, 2), "big")
@@ -484,7 +587,142 @@ def run_all(ex, src):
             chk(not any(e[0] in ("mount", "stream") for e in m.sdc.log),
                   "  no mount or stream attempted")
 
+    # ---- the same project as a bare stream image, mounted by name
+    with open(man) as f:
+        doc = yaml.safe_load(f)
+    proj = doc["project"]
+    del proj["disk"]
+    proj["image"], proj["sdc_path"] = "build/DEMO.SDS", "GAMES/DEMO.SDS"
+    sman = os.path.join(ex, "sds.yaml")
+    with open(sman, "w") as f:
+        yaml.safe_dump(doc, f)
+    sres = dmpkg.build(sman)
+    simg = read(sres["image"])
+    chk([(a.block, a.off) for a in sres["assets"]] == [(a.block, a.off) for a in res["assets"]]
+        and sres["build_id"] == res["build_id"],
+        "stream image: same layout and build_id as the disk")
+    chk(len(simg) == dmpkg.MIN_IMAGE and simg[5] == 0, "stream image: 162 blocks, no disk flag")
+    prog, done = assemble(ex, build, "SDC_BuildID")
+    m = Machine({"GAMES/DEMO.SDS": simg})
+    m.run(prog, 0x1000, done)
+    chk(m.peek(0x100, 1) == b"\0" and ("mount", "GAMES/DEMO.SDS") in m.sdc.log,
+        f"stream image mounted by name, no error (A=${m.peek(0x100,1)[0]:02X})")
+    check_assets(m, src, A, chk, "  ")
+
+    m = Machine({"OTHER.SDS": simg})
+    m.run(prog, 0x1000, done)
+    chk(m.peek(0x100, 1) == b"\x01", "missing file -> SDC_EMOUNT")
+
+    m = Machine({"GAMES/DEMO.SDS": simg[:dmpkg.MIN_IMAGE - 512]})
+    m.run(prog, 0x1000, done)
+    chk(m.peek(0x100, 1) == b"\x01", "image under 82,944 bytes -> SDC_EMOUNT")
+
     return all(results)
+
+
+LAYOUT_ASM = r"""
+        org     $1000
+        bra     start
+done    bra     done
+start
+        ldx     #SDC_MountName
+        ldy     #SDC_BuildID
+        jsr     sdc_open
+        bcs     fail
+        ldx     #GAPFILL
+        jsr     sdc_load
+        bcs     fail
+        ldx     #HUGE
+        jsr     sdc_load
+        bcs     fail
+        clra
+fail    sta     $0100
+        jsr     sdc_close
+        bra     done
+
+        include "dmpkg.asm"
+        include "assets.inc"
+        include "assettab.asm"
+"""
+
+
+def disk_layout_test():
+    """First fit around track 17 on a synthetic disk. BIG (70,000) fills most
+    of tracks 0-16; NEXT (20,000) won't fit before track 17 so it goes to
+    track 18; GAPFILL (3,000) then drops into the space left before track 17;
+    HUGE (100,000) runs off the end of track 34, which pushes the image past
+    720 sectors, so it's padded out of the SDC's double-sided range."""
+    rng = random.Random(17)
+    sizes = {"big": 70000, "next": 20000, "gapfill": 3000, "huge": 100000}
+    results = []
+    with tempfile.TemporaryDirectory() as td:
+        data = {}
+        for n, size in sizes.items():
+            data[n] = mkassets.rand_bytes(rng, size)
+            with open(os.path.join(td, n + ".bin"), "wb") as f:
+                f.write(data[n])
+        with open(os.path.join(td, "tiny.bin"), "wb") as f:   # stand-in loader
+            f.write(b"\x00\x00\x01\x30\x00\x39\xff\x00\x00\x30\x00")
+        assets = [{"name": "big", "file": "big.bin", "phys": 0x20000},
+                  {"name": "next", "file": "next.bin", "phys": 0x40000},
+                  {"name": "gapfill", "file": "gapfill.bin", "load": 0x6000},
+                  {"name": "huge", "file": "huge.bin", "phys": 0x60000}]
+        doc = {"project": {"name": "Layout", "image": "L.DSK", "equates": "assets.inc",
+                           "table": "assettab.asm", "disk": {"loader": "tiny.bin"}},
+               "assets": assets}
+        man = os.path.join(td, "p.yaml")
+        with open(man, "w") as f:
+            yaml.safe_dump(doc, f)
+        res = dmpkg.build(man)
+        pos = {a.name: a.block * 512 + a.off for a in res["assets"]}
+        img = read(res["image"])
+        results.append(check(pos == {"BIG": 512, "NEXT": 82944, "GAPFILL": 70512,
+                                     "HUGE": 102944},
+                             f"first fit around track 17 {pos}"))
+        results.append(check(len(img) == dmpkg.HD_MIN,
+                             f"image past 720 sectors padded to {dmpkg.HD_MIN} bytes "
+                             f"(got {len(img)})"))
+        results.append(check(verify(res["image"]), "dmpkg verify passes"))
+        files = disk_files(img)
+        results.append(check(files["TINY.BIN"][2] == read(os.path.join(td, "tiny.bin"))
+                             and "AUTOEXEC.BAS" in files,
+                             "loader and AUTOEXEC.BAS fit in the granules left over"))
+        t17 = img[dmpkg.DIR_LO:dmpkg.DIR_HI]
+        results.append(check(t17[512:512 + 32].startswith(b"DMPKG   DAT"),
+                             "track 17 holds the directory, no asset data"))
+        prog = lwasm_src(LAYOUT_ASM, td)
+        m = Machine({"L.DSK": img}, mounted="L.DSK")
+        m.run(prog, 0x1000, 0x1002)
+        err = m.peek(0x100, 1)[0]
+        results.append(check(err == 0 and m.peek(0x6000, 3000) == data["gapfill"]
+                             and bytes(m.phys[0x60000:0x60000 + 100000]) == data["huge"],
+                             f"GAPFILL and HUGE (crossing the end of track 34) load "
+                             f"(A=${err:02X})"))
+
+        # a disk with no room left for the loader is an error
+        doc["assets"] = [{"name": "fill", "file": "fill.bin", "phys": 0x100000}]
+        with open(os.path.join(td, "fill.bin"), "wb") as f:
+            f.write(bytes(dmpkg.DISK_BYTES - dmpkg.DIR_HI))
+        doc["assets"].insert(0, {"name": "low", "file": "low.bin", "phys": 0})
+        with open(os.path.join(td, "low.bin"), "wb") as f:
+            f.write(bytes(dmpkg.DIR_LO - 512))
+        with open(man, "w") as f:
+            yaml.safe_dump(doc, f)
+        try:
+            dmpkg.build(man)
+            full = None
+        except dmpkg.PackError as e:
+            full = str(e)
+        results.append(check(full and full.startswith("disk full"),
+                             f"no granule left for the loader -> {full!r}"))
+    return all(results)
+
+
+def lwasm_src(text, inc_dir):
+    src = os.path.join(inc_dir, "t.asm")
+    with open(src, "w") as f:
+        f.write(text)
+    return lwasm(src, os.path.join(inc_dir, "t.bin"), inc_dir)
 
 
 if __name__ == "__main__":

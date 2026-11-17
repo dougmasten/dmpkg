@@ -3,7 +3,8 @@
 #   make            same as make test
 #   make test       build + verify the example, then the 6809 end-to-end test
 #                   (which makes its own random assets; TEST_SEED=n repeats a run)
-#   make build      generate the example assets, build the image and include files
+#   make build      generate the example assets, build the include files,
+#                   assemble the loader, then build the disk image with it
 #   make verify     check the example image's size, CRCs and build ID
 #   make list       print the example image's TOC
 #   make asm        assemble the runtime for 6809 and 6309, report its size
@@ -27,7 +28,9 @@ PACKER  := $(wildcard python/src/dmpkg/*.py)
 EXAMPLE  := example
 MANIFEST := $(EXAMPLE)/project.yaml
 BUILD    := $(EXAMPLE)/build
-IMAGE    := $(BUILD)/DEMO.SDS
+IMAGE    := $(BUILD)/DEMO.DSK
+LOADER   := $(BUILD)/LOADER.BIN
+PASS1    := $(BUILD)/.pass1
 RUNTIME  := asm/dmpkg.asm
 ASSETS   := $(EXAMPLE)/assets/.stamp
 OUT      := build
@@ -40,7 +43,18 @@ $(ASSETS): $(EXAMPLE)/mkassets.py
 	$(PYTHON) $(EXAMPLE)/mkassets.py
 	@touch $@
 
-$(IMAGE): $(PACKER) $(MANIFEST) $(ASSETS)
+# Two passes: the loader embeds the build_id and descriptors from the include
+# files, so they're written first (pass 1), then the loader is assembled and
+# the image rebuilt with it on the disk. Asset placement and build_id don't
+# depend on the loader, so pass 2 writes the same include files.
+$(PASS1): $(PACKER) $(MANIFEST) $(ASSETS)
+	$(PYTHON) -m dmpkg build $(MANIFEST)
+	@touch $@
+
+$(LOADER): $(EXAMPLE)/loader.asm $(RUNTIME) $(PASS1)
+	$(LWASM) --6809 --format=decb -I asm -I $(BUILD) -o $@ $(EXAMPLE)/loader.asm
+
+$(IMAGE): $(PASS1) $(LOADER)
 	$(PYTHON) -m dmpkg build $(MANIFEST) -v
 
 build: $(IMAGE)

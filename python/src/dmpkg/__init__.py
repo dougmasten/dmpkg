@@ -2,6 +2,6 @@
 
 __version__ = "0.1.0"
 
-from .pack import PackError, build, read_image  # noqa: E402
+from .pack import PackError, build, read_disk, read_image  # noqa: E402
 
-__all__ = ["PackError", "build", "read_image", "__version__"]
+__all__ = ["PackError", "build", "read_disk", "read_image", "__version__"]

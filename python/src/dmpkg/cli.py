@@ -15,14 +15,19 @@ import sys
 import zlib
 
 from . import __version__
-from .pack import (BLOCK, F_DECB, F_PHYS, HDR_SIZE, MIN_IMAGE, TOC_ENTRY, PackError,
-                   build, read_image)
+from .pack import (BLOCK, DIR_HI, DIR_LO, DISK_BYTES, F_DECB, F_PHYS, H_DISK, HD_MIN,
+                   HDR_SIZE, MIN_IMAGE, SS_MAX, TOC_ENTRY, PackError, build, gran_of,
+                   read_disk, read_image)
 
 
 def cmd_list(path):
     img, h, ents = read_image(path)
     print(f"{h['name']}  v{h['version']}  build ${h['build_id']:08X}  "
-          f"{h['blocks']} blocks  TOC {h['toc_blocks']}")
+          f"{h['blocks']} blocks  TOC {h['toc_blocks']}"
+          + ("  DECB disk" if h["flags"] & H_DISK else ""))
+    if h["flags"] & H_DISK:
+        for f, grans in read_disk(img):
+            print(f"  {f:<12} {len(grans):>2} granule(s)")
     names = [",".join(n for n, b in (("phys", F_PHYS), ("decb", F_DECB)) if e["flags"] & b) or "-"
              for e in ents]
     fw = max([5] + [len(n) for n in names])
@@ -48,7 +53,46 @@ def cmd_verify(path) -> bool:
     if zlib.crc32(toc) != h["build_id"]:
         print("build id mismatch")
         ok = False
+    if h["flags"] & H_DISK:
+        ok &= verify_disk(img, h, ents)
     print("OK" if ok else "FAILED")
+    return ok
+
+
+def verify_disk(img: bytes, h: dict, ents: list) -> bool:
+    """Disk checks: SDC geometry, no asset on track 17, and every granule
+    holding header, TOC or asset bytes owned by DMPKG.DAT and nothing else."""
+    ok = True
+    if len(img) < DISK_BYTES or SS_MAX < len(img) < HD_MIN:
+        print(f"disk size {len(img)}: the SDC would not see 35 single-sided tracks")
+        ok = False
+    try:
+        files = dict(read_disk(img))
+    except PackError as e:
+        print(e)
+        return False
+    owner = {}
+    for f, grans in files.items():
+        for g in grans:
+            if g in owner:
+                print(f"granule {g} in both {owner[g]} and {f}")
+                ok = False
+            owner[g] = f
+    runs = [(0, h["toc_blocks"] * BLOCK)] + [(e["block"] * BLOCK + e["off"], e["length"])
+                                              for e in ents]
+    for i, (pos, n) in enumerate(runs):
+        stop = min(pos + n, DISK_BYTES)
+        if pos >= stop:
+            continue
+        what = "TOC" if i == 0 else f"asset {i - 1}"
+        if pos < DIR_HI and stop > DIR_LO:
+            print(f"{what} overlaps track 17")
+            ok = False
+            continue
+        for g in range(gran_of(pos), gran_of(stop - 1) + 1):
+            if owner.get(g) != "DMPKG.DAT":
+                print(f"{what}: granule {g} not owned by DMPKG.DAT")
+                ok = False
     return ok
 
 

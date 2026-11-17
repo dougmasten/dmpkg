@@ -1,9 +1,11 @@
 # dmpkg — project disc packer for the CoCo SDC STREAM protocol
 
-`dmpkg` packs all of a project's assets into a single **stream image** on the SD card. A small 6809 runtime (`asm/dmpkg.asm`, 966 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
+`dmpkg` packs all of a project's assets into a single image on the SD card. A small 6809 runtime (`asm/dmpkg.asm`, 966 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
+
+The image can also be a DECB disk that holds your loader program, so the whole project is one `.DSK` file: mount it, run the loader (or let `AUTOEXEC.BAS` do it), and the loader streams the assets from that same file. See [Single-file disk image](#single-file-disk-image).
 
 ```
-project.yaml ──► dmpkg build ───► build/DEMO.SDS      → SD card
+project.yaml ──► dmpkg build ───► build/DEMO.DSK      → SD card (or a bare .SDS)
                                   ├─► build/assets.inc     EQUs (no bytes)
                                   ├─► build/assettab.asm   mount name, build_id, descriptors
                                   └─► build/DEMO.map       layout report
@@ -13,14 +15,15 @@ project.yaml ──► dmpkg build ───► build/DEMO.SDS      → SD card
 
 ```sh
 pip install -e python              # dmpkg command (or: PYTHONPATH=python/src python3 -m dmpkg)
-python3 example/mkassets.py         # writes example/assets/ (random filler, fixed seed)
-dmpkg build example/project.yaml -v
-dmpkg verify example/build/DEMO.SDS
-dmpkg list   example/build/DEMO.SDS
+make build                          # assets, include files, loader, then DEMO.DSK
+dmpkg verify example/build/DEMO.DSK
+dmpkg list   example/build/DEMO.DSK
 ```
 
+`make build` runs the steps of a [two-pass build](#single-file-disk-image): `example/mkassets.py` writes the example's assets (random filler, fixed seed), `dmpkg build` writes the include files, lwasm assembles `example/loader.asm` against them, and a second `dmpkg build` puts the loader on the disk. The Makefile runs the package straight from `python/src/`, so it works without installing.
+
 ```asm
-        ldx     #SDC_MountName      from assettab.asm
+        ldx     #SDC_MountName      from assettab.asm (0 on a disk image: no mount)
         ldy     #SDC_BuildID        0 to skip the stale-image check
         jsr     sdc_open
         bcs     error               A = error code
@@ -44,7 +47,7 @@ python/         the packer, a Python project of its own
   src/dmpkg/    pack.py (build, image reading), cli.py (commands)
   tests/        end-to-end test of the packer and runtime (run_test.py)
 asm/            the 6809 runtime (dmpkg.asm)
-example/        example project and asset generator
+example/        example project, asset generator and loader
 docs/           image format
 Makefile        builds the example and runs the tests across both parts
 ```
@@ -54,14 +57,18 @@ Makefile        builds the example and runs the tests across both parts
 ```yaml
 project:
   name: DEMO                       # up to 16 chars, stored in the header
-  image: build/DEMO.SDS            # output image (required)
-  sdc_path: GAMES/DEMO.SDS         # where it lives on the card; 8.3, dirs ≤ 8 chars
+  image: build/DEMO.DSK            # output image (required)
+  disk:                            # optional: make the image a DECB disk too
+    loader: build/LOADER.BIN       # LOADM file put on the disk
+    autoexec: true                 # AUTOEXEC.BAS that runs it (default with a loader)
+  sdc_path: GAMES/DEMO.DSK         # mount by this path; 8.3, dirs ≤ 8 chars. Optional
+                                   # with disk: (no mount), else defaults to the image name
   equates: build/assets.inc        # optional outputs
   table: build/assettab.asm
   map: build/DEMO.map
   prefix: ""                       # prepended to every generated symbol
   min_size: 0x14400                # default and minimum; the SDC won't mount smaller
-  pad_byte: 0
+  pad_byte: 0                      # default $00, $FF with disk:
 
 assets:
   - name: font                     # becomes FONT / FONT_BLK / FONT_LEN ...
@@ -94,7 +101,7 @@ assets:
 | `NAME_IDX` `NAME_BLK` `NAME_OFF` | index, start block, byte offset in block |
 | `NAME_LEN` | stored length (for decb, the record stream) |
 | `NAME_DEST` / `NAME_EXEC` | destination (CPU or physical), or DECB exec address |
-| `SDC_MountName` `SDC_BuildID` | mount string, expected 4-byte build_id |
+| `SDC_MountName` `SDC_BuildID` | mount string (an `equ 0` for a disk image with no `sdc_path`), expected 4-byte build_id |
 | `SDC_BUILD_ID` `SDC_IMAGE_BLOCKS` `SDC_ASSET_COUNT` | build info |
 
 Descriptor: `+0 block(3) +3 offset(2) +5 length(3) +8 flags(1) +9 dest(3)`. Flags: `$80` phys, `$40` decb.
@@ -135,6 +142,27 @@ Every call returns carry clear on success. On failure it returns carry set and t
 
 Configure these before the include: `SDC_DRIVE` (0), `SDC_WINDOW` ($4000), `SDC_MMUREG` (from `SDC_WINDOW`), `SDC_MMU_HOME`, `SDC_DELAY` (12), `SDC_TIMEOUT` (16), `SDC_MINVER` ($0117), `SDC_NOVERCHK`. The runtime is plain 6809 and assembles unchanged with `--6309`.
 
+## Single-file disk image
+
+With `disk:` in the manifest, the image is also a standard 35-track DECB disk (161,280 bytes):
+
+- **Assets:** the header, TOC and assets live in granules owned by a `DMPKG.DAT` file, so Disk BASIC counts them as used and never overwrites them. No asset crosses track 17 (the directory track), because a stream can't skip it. First fit fills the space left before track 17 with later assets that fit.
+- **Loader:** `disk.loader` (a LOADM file) and, by default, an `AUTOEXEC.BAS` that runs it (`10 LOADM"LOADER.BIN":EXEC`) go into the granules left over. SDC-DOS runs `AUTOEXEC.BAS` at power-on (hold SHIFT to skip it).
+- **No mount:** with no `sdc_path`, `SDC_MountName` is 0, and `sdc_open` streams the disk already mounted in `SDC_DRIVE`, the one the loader came from. Copy the `.DSK` anywhere on the card and `DRIVE 0,"DEMO.DSK"` it.
+- **Bigger projects:** assets that don't fit carry on past track 34, where Disk BASIC never looks. If that takes the file past 720 sectors, it's padded to 737,792 bytes: the SDC treats 721–2880 sectors as a double-sided disk, which would move the directory track, and anything larger as a hard disk image that floppy emulation sees as single-sided.
+
+The loader embeds `SDC_BuildID` and the descriptors, so it's assembled against the include files of the same build. Build twice:
+
+```sh
+dmpkg build project.yaml          # pass 1: include files (notes the loader isn't built yet)
+lwasm --6809 --format=decb -I asm -I build -o build/LOADER.BIN loader.asm
+dmpkg build project.yaml          # pass 2: same layout, loader on the disk
+```
+
+Asset placement and `build_id` don't depend on the loader, so pass 2 writes the same include files. The `Makefile` does this for the example, whose `example/loader.asm` loads every asset and returns to BASIC.
+
+**Interrupts:** mask IRQ and FIRQ (`orcc #$50`) before `sdc_open`. After `LOADM`, Disk BASIC's 60 Hz interrupt counts down the drive-motor timer and writes `$FF40` when it runs out, which would take the SDC out of command mode in the middle of a stream.
+
 ## Image format
 
 Block 0 holds a 32-byte header, then 16-byte TOC entries. Asset data starts at the first block after the TOC.
@@ -144,11 +172,11 @@ header: "DMPK" ver(1) flags(1) count(2) build_id(4) blocks(3) toc_blocks(1) name
 entry:  descriptor(12) crc32(4)
 ```
 
-`build_id` is a CRC-32 of the TOC entries. They hold each asset's place, size, destination and CRC, so the same content always gives the same ID and any change to an asset gives a new one. `sdc_open` compares the image's `build_id` with `SDC_BuildID` from `assettab.asm`, so a program built against a different image fails with error 2 instead of loading garbage. The image is padded to whole blocks and to at least `$14400` bytes (82,944). That's the smallest disk image the SDC's `M:` mount accepts according to the User Guide; STREAM itself has no limit. The full byte-level spec is in [docs/FORMAT.md](docs/FORMAT.md).
+`build_id` is a CRC-32 of the TOC entries. They hold each asset's place, size, destination and CRC, so the same content always gives the same ID and any change to an asset gives a new one. The loader on a disk image isn't covered, which is what lets it embed the ID. `sdc_open` compares the image's `build_id` with `SDC_BuildID` from `assettab.asm`, so a program built against a different image fails with error 2 instead of loading garbage. The image is padded to whole blocks and to at least `$14400` bytes (82,944). That's the smallest disk image the SDC's `M:` mount accepts according to the User Guide; STREAM itself has no limit. The full byte-level spec is in [docs/FORMAT.md](docs/FORMAT.md).
 
 ## Tests
 
-`python/tests/run_test.py` assembles the real runtime with lwasm and runs it on a 6809 core (`pip install -e 'python[test]'` installs it, MC6809). It talks to a strict CoCo SDC model and a CoCo 3 MMU. The model raises an error if data is read before READY, if READY isn't given time to settle (it stays stale for 20 cycles after each block), if `$FF4B` is read before `$FF4A`, if a register is read within 20µs of a command, if a read passes end of file, if `M:` is given an image under 82,944 bytes, or if a STREAM is issued on firmware older than 117. It also covers the firmware gate: 117 is accepted, while 116 and pre-113 firmware (no VERSION command) both give error 6 and never mount. A further run splits a DECB record's length word across a block that fails, and checks that error 5 comes back in A, both for the firmware's real behaviour (the stream ends with status `$08`) and for the FAILED bit the User Guide describes. Another stalls the card part way through the phys load, so READY never comes: with the runtime assembled at `SDC_TIMEOUT=1` to keep it short, it checks for error 4, a restored MMU window and a stopped stream. The test checks every loaded byte against the sources.
+`python/tests/run_test.py` assembles the real runtime with lwasm and runs it on a 6809 core (`pip install -e 'python[test]'` installs it, MC6809). It builds the example as a single-file disk the way the Makefile does, reads `LOADER.BIN` back out through its own DECB directory reader, and runs it against the already-mounted disk. It also builds the same project as a bare stream image (same layout and `build_id`), mounts it by name, and packs a synthetic disk to check first fit around track 17, the padding past 720 sectors, and the "disk full" error when no granule is left for the loader. It talks to a strict CoCo SDC model and a CoCo 3 MMU. The model raises an error if data is read before READY, if READY isn't given time to settle (it stays stale for 20 cycles after each block), if `$FF4B` is read before `$FF4A`, if a register is read within 20µs of a command, if a read passes end of file, if `M:` is given an image under 82,944 bytes, or if a STREAM is issued on firmware older than 117. It also covers the firmware gate: 117 is accepted, while 116 and pre-113 firmware (no VERSION command) both give error 6 and never mount. A further run splits a DECB record's length word across a block that fails, and checks that error 5 comes back in A, both for the firmware's real behaviour (the stream ends with status `$08`) and for the FAILED bit the User Guide describes. Another stalls the card part way through the phys load, so READY never comes: with the runtime assembled at `SDC_TIMEOUT=1` to keep it short, it checks for error 4, a restored MMU window and a stopped stream. The test checks every loaded byte against the sources.
 
 The test doesn't use `example/assets/`. Each run writes fresh random assets of the same sizes to a temp folder, with a new seed, and builds `example/project.yaml` there. It prints the seed, and `TEST_SEED=n` repeats that run. `example/mkassets.py` makes the example's own assets with a fixed seed, so the example image and the worked example in [docs/FORMAT.md](docs/FORMAT.md) come out the same every time.
 
@@ -166,6 +194,7 @@ Other targets: `make build`, `make verify`, `make list`, `make asm` (assembles t
 - Drive 1 (`SDC_DRIVE equ 1` → `$E1`/`$91`) follows the command-bit pattern but hasn't been confirmed.
 - `sdc_stop` waits for BUSY to clear after `$D0`. The guide says BUSY stays set until EOF or abort; the old library polled READY there instead.
 - `SDC_DELAY` assumes the CPU runs at 1.79 MHz or slower. If you run a 6309 in native mode, raise it.
+- Disk images: toolshed's `decb` reads the example disk (directory, free space, `LOADER.BIN`, `AUTOEXEC.BAS`), but STREAM on a disk that SDC-DOS mounted with `DRIVE`, `AUTOEXEC.BAS` running the loader, and the hard-disk-size padding past 720 sectors all come from the guide and the firmware disassembly, not from a real SDC.
 
 ## License
 

@@ -1,11 +1,17 @@
 # dmpkg project manifest
+
 project:
   name: Demo
-  image: build/DEMO.SDS        # copy to the SD card as GAMES/DEMO.SDS
-  sdc_path: GAMES/DEMO.SDS     # path the CoCo mounts (8.3, dirs allowed)
+  image: build/DEMO.DSK        # one file: copy to the SD card, DRIVE 0,"DEMO.DSK"
   equates: build/assets.inc    # EQUs only
   table: build/assettab.asm    # mount name, build_id, descriptors
   map: build/DEMO.map
+  disk:                        # the image is also a DECB disk holding the loader
+    loader: build/LOADER.BIN   # assembled from loader.asm against the files above
+    autoexec: true             # AUTOEXEC.BAS: LOADM"LOADER.BIN":EXEC
+
+# Without disk:, the image is a bare stream image (e.g. build/DEMO.SDS) that
+# the program mounts by name: add sdc_path: GAMES/DEMO.SDS (8.3, dirs allowed).
 
 assets:
   - name: font
