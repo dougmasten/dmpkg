@@ -42,13 +42,18 @@ verify: $(IMAGE)
 list: $(IMAGE)
 	$(PYTHON) dmpkg.py list $(IMAGE)
 
+# Assembled at $(ASM_ORG), not 0: at 0 the runtime's variables would land in
+# the direct page and come out smaller than in a real program.
+ASM_ORG ?= 0x2000
+
 asm: $(RUNTIME)
 	@mkdir -p $(OUT)
-	$(LWASM) --6809 --format=raw -o $(OUT)/dmpkg.bin --list=$(OUT)/dmpkg.lst $(RUNTIME)
-	$(LWASM) --6309 --format=raw -o $(OUT)/dmpkg.6309.bin $(RUNTIME)
-	$(LWASM) --6809 --format=raw -DSDC_NOVERCHK -o $(OUT)/dmpkg.nover.bin $(RUNTIME)
+	@printf ' org %s\n include "%s"\n' '$(ASM_ORG)' '$(CURDIR)/$(RUNTIME)' > $(OUT)/runtime.asm
+	$(LWASM) --6809 --format=raw -o $(OUT)/dmpkg.bin --list=$(OUT)/dmpkg.lst $(OUT)/runtime.asm
+	$(LWASM) --6309 --format=raw -o $(OUT)/dmpkg.6309.bin $(OUT)/runtime.asm
+	$(LWASM) --6809 --format=raw -DSDC_NOVERCHK -o $(OUT)/dmpkg.nover.bin $(OUT)/runtime.asm
 	@echo "runtime: $$(wc -c < $(OUT)/dmpkg.bin) bytes" \
-	      "($$(wc -c < $(OUT)/dmpkg.nover.bin) with SDC_NOVERCHK)"
+	      "($$(wc -c < $(OUT)/dmpkg.nover.bin) with SDC_NOVERCHK), assembled at" '$(ASM_ORG)'
 
 test: verify asm
 	$(PYTHON) test/run_test.py

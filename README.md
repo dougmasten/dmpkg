@@ -1,6 +1,6 @@
 # dmpkg — project disc packer for the CoCo SDC STREAM protocol
 
-`dmpkg` packs all of a project's assets into a single **stream image** on the SD card. A small 6809 runtime (`runtime/dmpkg.asm`, 849 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
+`dmpkg` packs all of a project's assets into a single **stream image** on the SD card. A small 6809 runtime (`runtime/dmpkg.asm`, 912 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
 
 ```
 project.yaml ──► dmpkg.py build ──► build/DEMO.SDS      → SD card
@@ -146,7 +146,7 @@ make test TEST_SEED=1234        # repeat a run with the seed it printed
 make test LWASM=/path/to/lwasm  # if lwasm isn't on PATH
 ```
 
-Other targets: `make build`, `make verify`, `make list`, `make asm` (assembles the runtime for 6809, 6309 and `SDC_NOVERCHK`, and prints its size), `make clean`. `make build` generates the example assets itself.
+Other targets: `make build`, `make verify`, `make list`, `make asm` (assembles the runtime for 6809, 6309 and `SDC_NOVERCHK` at `ASM_ORG`, default `0x2000`, and prints its size), `make clean`. `make build` generates the example assets itself.
 
 ## Not yet verified on hardware
 
