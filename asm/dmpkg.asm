@@ -183,7 +183,7 @@ sdc_ver         fdb     0       ; firmware version (BCD), set by sdc_version
 ; Exit        : CC.C clear: D = firmware version in BCD ($0124 = 124),
 ;             :             0 if the firmware predates VERSION (before 113)
 ;             : CC.C set  : A = SDC_ENODEV or SDC_ETIME
-; Destroys    : A, B, CC
+; Destroys    : A, CC (B too when the SDC is found)
 ; Calls       : sdc_version
 ; Description : Checks a CoCo SDC is present, then gets its firmware version
 ;             : (also kept in sdc_ver). The check writes the Flash data
@@ -195,10 +195,10 @@ sdc_ver         fdb     0       ; firmware version (BCD), set by sdc_version
 sdc_init
         lda     #$64                    ; Flash data: bits 5-6 set
         sta     SDC_FDATA
-        ldb     SDC_FCTL
+        lda     SDC_FCTL
         clr     SDC_FDATA               ; Flash data: bits 5-6 clear
-        eorb    SDC_FCTL                ; bits that followed the data
-        cmpb    #$60
+        eora    SDC_FCTL                ; bits that followed the data
+        cmpa    #$60
         beq     sdc_version             ; found: get the firmware version
         lda     #SDC_ENODEV             ; ERROR CODE: no CoCo SDC
         orcc    #1                      ; set carry (error)
