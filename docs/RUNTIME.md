@@ -53,7 +53,7 @@ Every call returns carry clear on success. On failure it returns carry set and t
 
 **Presence check:** `sdc_init` (and so `sdc_open`) first writes `$64`, then `$00`, to the Flash data register (`$FF42`) and reads the Flash control register (`$FF43`) after each write. On a CoCo SDC, bits 5–6 of `$FF43` follow the data register, so the two reads differ by exactly `$60`. Anything else means no SDC, and it returns error 1 at once, without sending a command or waiting for a timeout. The check doesn't set the Flash program bit or change the bank, so it's safe with code running from the cartridge ROM. The method comes from the FUZIX CoCo SDC driver (`devsdc_exist`); the User Guide doesn't describe one.
 
-**Firmware check:** `sdc_open` then sends the SDC `VERSION` command (`$C0`, `$FF49` = `'V'`). The command arrived in firmware 113, and older firmware answers FAILED, which counts as version 0. `STREAM` arrived in 117. If the version is below `SDC_MINVER` (`$0117`), `sdc_open` returns error 2 before mounting anything. `sdc_ver` keeps the version it read, so you can report it. Define `SDC_NOVERCHK` to skip the check.
+**Firmware check:** `sdc_open` then sends the SDC `VERSION` command (`$C0`, `$FF49` = `'V'`). The command arrived in firmware 113, and older firmware answers FAILED, which counts as version 0. `STREAM` arrived in 117. If the version is below `SDC_MINVER` (`$0117`), `sdc_open` returns error 2 before mounting anything. `sdc_ver` keeps the version it read, so you can report it. Define `SDC_NOVERCHK` to skip the check. [SDC_FIRMWARE.md](SDC_FIRMWARE.md) lists what each firmware version added.
 
 ## Loading
 
