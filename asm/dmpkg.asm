@@ -1,23 +1,11 @@
-;-------------------------------------------------------------------
+;------------------------------------------------------------------------------
 ; dmpkg.asm - CoCo SDC STREAM loader for dmpkg images
 ;
 ; 6809 source (runs on HD6309 in either mode), lwasm syntax.
 ; Pair with the files dmpkg generates:  equates (EQUs) and table
-; (mount name, header, 12-byte asset descriptors).
+; (mount name, build_id, 12-byte asset descriptors).
 ;
 ; Entry points
-;   sdc_open   X = mount name ("M:..." zero-terminated, e.g. SDC_MountName),
-;                  or 0 to use the image already in SDC_DRIVE (a dmpkg disk
-;                  image the loader was run from)
-;              Y = expected 4-byte build_id (SDC_BuildID) or 0 to skip the check
-;              Checks a CoCo SDC is present and its firmware supports STREAM
-;              (VERSION >= SDC_MINVER), mounts the image, starts a stream at
-;              block 0 and checks the build_id so a stale image is caught.
-;   sdc_load   X = asset descriptor
-;              Loads the asset to its destination. If the stream is already
-;              positioned at the asset (packed assets loaded in image
-;              order) it carries on without restarting the stream.
-;              decb assets: returns exec address in U.
 ;   sdc_init   Checks a CoCo SDC is present (SDC_ENODEV if not), then gets
 ;              its firmware version like sdc_version. sdc_open calls it.
 ;   sdc_version
@@ -25,9 +13,23 @@
 ;              (e.g. $0124 for 124), or D = 0 if the firmware predates the
 ;              VERSION command (before 113). Also stored in sdc_ver.
 ;              Ends a running stream.
+;   sdc_open   X = mount name ("M:..." zero-terminated, e.g. SDC_MountName),
+;                  or 0 to use the image already in SDC_DRIVE (a dmpkg disk
+;                  image the loader was run from)
+;              Y = expected 4-byte build_id (SDC_BuildID) or 0 to skip the check
+;              Checks a CoCo SDC is present and its firmware supports STREAM
+;              (VERSION >= SDC_MINVER), mounts the image, starts a stream at
+;              block 0 and checks the build_id so a stale image is caught.
 ;   sdc_stop   ends a running stream ($D0), stays in command mode
 ;   sdc_close  sdc_stop, then puts the controller back in floppy
 ;              emulation mode (write 0 to $FF40)
+;   sdc_load   X = asset descriptor
+;              Loads the asset to its destination. If the stream is already
+;              positioned at the asset (packed assets loaded in image
+;              order) it carries on without restarting the stream.
+;              decb assets: returns exec address in U.
+;   sdc_getbyte
+;              Returns the next stream byte in A.
 ;
 ; All return carry clear on success, or carry set and A = error code:
 ;   SDC_EMOUNT  1  mount failed (status bit 7 after $E0)
@@ -38,10 +40,12 @@
 ;                  with status $08: card error)
 ;   SDC_EVER    6  firmware too old for STREAM (sdc_ver holds its version)
 ;   SDC_ENODEV  7  no CoCo SDC found
-; On any error the stream is stopped. Registers other than A/CC (and U
-; for decb loads) are preserved.
+; On any error the stream is stopped. Registers other than A/CC are
+; preserved, except B for sdc_init and sdc_version (they return D) and U
+; for decb loads (exec address).
 ;
 ; Protocol (CoCo SDC user guide ch. 7, firmware with STREAM support):
+;   presence: $64 then $00 -> $FF42 (Flash data), $FF43 reads differ by $60
 ;   $43 -> $FF40 command mode; status $FF48: b0 BUSY, b1 READY, b7 FAILED
 ;   'V' -> $FF49, $C0 -> $FF48: version, BCD in $FF4A/$FF4B (FAILED if <113)
 ;   $E0+drv mount, 256-byte name block written to $FF4A/$FF4B
@@ -65,7 +69,7 @@
 ;   SDC_TIMEOUT  16     poll timeout, units of 65536 polls (1-255)
 ;   SDC_MINVER   $0117  lowest firmware sdc_open accepts (117 added STREAM)
 ;   SDC_NOVERCHK        if defined, sdc_open skips the version check
-;-------------------------------------------------------------------
+;------------------------------------------------------------------------------
 
         ifndef  SDC_DRIVE
 SDC_DRIVE       equ     0
@@ -158,7 +162,7 @@ flags           rmb     1               ; SDC_F_PHYS, SDC_F_DECB
 dest            rmb     3               ; CPU or physical address
                 endstruct
 
-;-------------------------------------------------------------------
+;------------------------------------------------------------------------------
 ; state
 sdc_blk         rmb     3       ; block holding the next stream byte
 sdc_off         rmb     2       ; offset of the next byte in that block
@@ -167,7 +171,7 @@ sdc_poll        rmb     1       ; nonzero: wait READY before the next byte
 sdc_left        rmb     3       ; bytes still to copy (24-bit)
 sdc_chunk       rmb     2       ; bytes in the current copy chunk
 sdc_n           rmb     1       ; 32-byte groups left in the chunk
-sdc_phys        rmb     1       ; nonzero: destination is the MMU window
+sdc_phys        fcb     0       ; nonzero only during a phys copy
 sdc_mblk        rmb     1       ; block mapped in the window
 sdc_msave       rmb     1       ; window block before the load
 sdc_tmo         rmb     1       ; timeout outer counter
@@ -226,9 +230,10 @@ sdc_version
         bcs     @exit
         ldd     #0
         tst     SDC_STAT                ; FAILED: no VERSION command (< 113)
-        bmi     @st
+        bmi     @set_ver
         ldd     SDC_DATA
-@st     std     sdc_ver
+@set_ver
+        std     sdc_ver
         andcc   #$fe                    ; clear carry (success)
 @exit   rts
 
@@ -241,7 +246,7 @@ sdc_version
 ;             : CC.C set  : A = error code (stream stopped)
 ; Destroys    : A, CC
 ; Calls       : sdc_init (sdc_stop with SDC_NOVERCHK), sdc_waitidle,
-;             : sdc_waitready, sdc_start, sdc_getbyte, sdc_fail
+;             : sdc_waitready, sdc_start, sdc_fail
 ; Description : Checks a CoCo SDC is present and its firmware supports STREAM
 ;             : (VERSION >= SDC_MINVER), mounts the image (unless X = 0),
 ;             : starts a stream at block 0 and compares the header's build_id
@@ -392,7 +397,7 @@ sdc_load
         jsr     sdc_start
         puls    u
         lbcs    @err
-        ldd     sdc_desc.off,x             ; skip to the asset's offset (0-511)
+        ldd     sdc_desc.off,x          ; skip to the asset's offset (0-511)
         beq     @here
         std     sdc_off                 ; stream position once skipped
         lsra                            ; D = whole pairs to drop
@@ -417,15 +422,13 @@ sdc_load
         std     sdc_left
         lda     sdc_desc.len+2,x
         sta     sdc_left+2
-        lda     sdc_desc.flags,x
-        bita    #SDC_F_PHYS
-        bne     @phys
-        clr     sdc_phys
+        tst     sdc_desc.flags,x        ; SDC_F_PHYS is bit 7
+        bmi     @phys
         pshs    u
         ldu     sdc_desc.dest+1,x
         jsr     sdc_copy
         puls    u
-        lbcs    @err
+        bcs     @err
         bra     @ok
 ; CoCo 3 physical load through the MMU window
 @phys   pshs    u
@@ -435,21 +438,16 @@ sdc_load
         lda     SDC_MMUREG
         endc
         sta     sdc_msave
-        lda     sdc_desc.dest,x            ; block = dest >> 13
-        ldb     sdc_desc.dest+1,x
-        lsra
-        rorb
-        lsra
-        rorb
-        lsra
-        rorb
-        lsra
-        rorb
-        lsra
-        rorb
-        stb     sdc_mblk
-        stb     SDC_MMUREG
-        ldd     sdc_desc.dest+1,x          ; window offset = dest & $1FFF
+        ldd     sdc_desc.dest,x         ; block = dest >> 13: A:B = bits 23-8,
+        aslb                            ; shifted left 3 leaves bits 20-13 in A
+        rola
+        aslb
+        rola
+        aslb
+        rola
+        sta     sdc_mblk
+        sta     SDC_MMUREG
+        ldd     sdc_desc.dest+1,x       ; window offset = dest & $1FFF
         anda    #$1F
         addd    #SDC_WINDOW
         tfr     d,u
@@ -461,25 +459,24 @@ sdc_load
         clr     sdc_phys
         puls    a,cc
         puls    u
-        lbcs    @err
+        bcs     @err
         bra     @ok
 ; decb records: [len.w addr.w data]... [0000 exec.w]
-@decb   clr     sdc_phys
-        clr     sdc_left
+@decb   clr     sdc_left
 @decb_loop
         jsr     sdc_getword             ; D = length
-        lbcs    @err
+        bcs     @err
         std     sdc_left+1
         beq     @decb_end
         jsr     sdc_getword             ; D = load address
-        lbcs    @err
+        bcs     @err
         tfr     d,u
         jsr     sdc_copy
-        lbcs    @err
+        bcs     @err
         bra     @decb_loop
 @decb_end
         jsr     sdc_getword             ; exec address
-        lbcs    @err
+        bcs     @err
         tfr     d,u
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    b,x,y,pc
@@ -628,10 +625,11 @@ sdc_getbyte
 @odd    lda     SDC_DATA+1              ; odd offset: second byte
 @adv    leax    1,x
         cmpx    #512
-        bne     @st
+        bne     @set_off
         bsr     sdc_nextblk
         ldx     #0
-@st     stx     sdc_off
+@set_off
+        stx     sdc_off
         andcc   #$fe                    ; clear carry (success)
 @exit   puls    b,x,pc
 
@@ -647,7 +645,7 @@ sdc_getbyte
 sdc_getword
         bsr     sdc_getbyte
         bcs     @error
-        tfr     a,b                     ; B = 1st byte (GetByte preserves B)
+        tfr     a,b                     ; B = 1st byte (sdc_getbyte keeps B)
         bsr     sdc_getbyte
         bcs     @error                  ; A = error code
         exg     a,b                     ; D = 1st:2nd
@@ -712,27 +710,30 @@ sdc_copy
 @room   ldd     #512                    ; chunk = bytes left in this block
         subd    sdc_off
         tst     sdc_left                ; capped by bytes left to copy
-        bne     @c1
+        bne     @cap_win
         cmpd    sdc_left+1
-        bls     @c1
+        bls     @cap_win
         ldd     sdc_left+1
-@c1     tst     sdc_phys                ; and by room left in the window
-        beq     @c2
+@cap_win
+        tst     sdc_phys                ; and by room left in the window
+        beq     @set_chunk
         std     sdc_chunk
         ldd     #SDC_WEND
         pshs    u
         subd    ,s++
         cmpd    sdc_chunk
-        bls     @c2
+        bls     @set_chunk
         ldd     sdc_chunk
-@c2     std     sdc_chunk
+@set_chunk
+        std     sdc_chunk
         tfr     d,y                     ; Y = bytes to copy now
         ldd     sdc_left+1              ; sdc_left -= chunk
         subd    sdc_chunk
         std     sdc_left+1
-        bcc     @l2
+        bcc     @chk_odd
         dec     sdc_left
-@l2     ldb     sdc_off+1               ; odd offset: pick up the 2nd byte first
+@chk_odd
+        ldb     sdc_off+1               ; odd offset: pick up the 2nd byte first
         bitb    #1
         beq     @even
         lda     1,x
@@ -800,8 +801,9 @@ sdc_copy
 @adv    ldd     sdc_off                 ; advance stream position
         addd    sdc_chunk
         cmpd    #512
-        bne     @so
+        bne     @set_off
         jsr     sdc_nextblk
         ldd     #0
-@so     std     sdc_off
+@set_off
+        std     sdc_off
         jmp     @loop
