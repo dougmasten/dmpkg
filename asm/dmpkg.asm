@@ -145,11 +145,6 @@ SDC_EFAIL       equ     5               ; controller reported an error
 SDC_EVER        equ     6               ; firmware older than SDC_MINVER
 SDC_ENODEV      equ     7               ; no CoCo SDC found
 
-; skip2: CMPX # opcode, swallows the next 2-byte instruction (changes CC)
-skip2           macro
-                fcb     $8C
-                endm
-
 SDC_F_PHYS      equ     $80
 SDC_F_DECB      equ     $40
 
@@ -596,7 +591,7 @@ sdc_waitready
         dec     sdc_tmo
         bne     @loop
         lda     #SDC_ETIME              ; ERROR CODE: READY timeout
-        skip2                           ; skip the lda below
+        fcb     $8C                     ; CMPX #: skips the lda below
 @fail   lda     #SDC_EFAIL              ; ERROR CODE: SDC reported FAILED
 @err    orcc    #1                      ; set carry (error)
         puls    x,pc
