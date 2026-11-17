@@ -1,6 +1,6 @@
 # dmpkg stream image format (`.SDS`), version 1
 
-This is the on-card layout written by `dmpkg.py build` and read by `runtime/dmpkg.asm` through the CoCo SDC `STREAM` command. All multi-byte integers are **big-endian** (6809 order). A *block* is 512 bytes, and block numbers are 24-bit, the same as the SDC's `$FF49–$FF4B` LSN registers.
+This is the on-card layout written by `dmpkg build` and read by `asm/dmpkg.asm` through the CoCo SDC `STREAM` command. All multi-byte integers are **big-endian** (6809 order). A *block* is 512 bytes, and block numbers are 24-bit, the same as the SDC's `$FF49–$FF4B` LSN registers.
 
 ## Overall layout
 
@@ -81,7 +81,7 @@ All CRCs are standard CRC-32 (IEEE 802.3, reflected, init/xorout `$FFFFFFFF`; Py
 - **Entry crc32:** the CRC of the `length` stored bytes at the asset's offset.
 - **build_id:** the CRC of the TOC entries (`count × 16` bytes, not the header and not the TOC padding) followed by every byte from block `toc_blocks` to the end of the file, padding included. The same inputs always give the same ID.
 
-`dmpkg.py verify` checks the file size against `blocks` and `min_size`, recomputes every entry CRC, and recomputes `build_id`.
+`dmpkg verify` checks the file size against `blocks` and `min_size`, recomputes every entry CRC, and recomputes `build_id`.
 
 ## Mount name (not stored in the image)
 

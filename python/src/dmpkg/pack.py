@@ -1,26 +1,20 @@
-#!/usr/bin/env python3
 """
-dmpkg - project disc packer for the CoCo SDC STREAM protocol.
+Packing and image reading for dmpkg: builds a project's image and include
+files from its manifest, and reads images back. The command line is in
+dmpkg.cli.
 
-Packs a project's assets into one stream image that a CoCo program reads
-with the CoCo SDC STREAM command ($9x): the image is mounted, a 24-bit
-512-byte block number goes in $FF49-$FF4B, and data comes 16 bits at a time
-from $FF4A/$FF4B with READY polled between blocks.
+The image is read by a CoCo program with the CoCo SDC STREAM command ($9x):
+a 24-bit 512-byte block number goes in $FF49-$FF4B, and data comes 16 bits
+at a time from $FF4A/$FF4B with READY polled between blocks.
 
-Outputs (paths from the manifest, relative to it):
+Outputs of build() (paths from the manifest, relative to it):
   image    stream image, padded to 512-byte blocks and the SDC minimum size
   equates  lwasm include: EQUs only (no bytes emitted)
   table    lwasm include: mount name, build_id and 12-byte asset descriptors
   map      human-readable layout report
-
-Usage:
-  dmpkg.py build project.yaml [-v]
-  dmpkg.py list  IMAGE.SDS
-  dmpkg.py verify IMAGE.SDS
 """
 from __future__ import annotations
 
-import argparse
 import os
 import re
 import struct
@@ -28,10 +22,7 @@ import sys
 import zlib
 from dataclasses import dataclass, field
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover
-    sys.exit("dmpkg: PyYAML is required (pip install pyyaml)")
+import yaml
 
 BLOCK = 512
 MIN_IMAGE = 0x14400          # smallest DSK that M: mounts, per the SDC User Guide
@@ -392,61 +383,3 @@ def read_image(path: str):
                          dest=int.from_bytes(e[9:12], "big"), crc=struct.unpack(">I", e[12:16])[0]))
     return img, dict(version=ver, count=count, build_id=bid, blocks=blocks, toc_blocks=tocb,
                      name=name), ents
-
-
-def cmd_list(path):
-    img, h, ents = read_image(path)
-    print(f"{h['name']}  v{h['version']}  build ${h['build_id']:08X}  "
-          f"{h['blocks']} blocks  TOC {h['toc_blocks']}")
-    names = [",".join(n for n, b in (("phys", F_PHYS), ("decb", F_DECB)) if e["flags"] & b) or "-"
-             for e in ents]
-    fw = max([5] + [len(n) for n in names])
-    print()
-    print(f"  {'idx':>3} {'block':>7} {'off':>5} {'length':>8}  {'dest':<7}  {'flags':<{fw}}  crc32")
-    for i, (e, fl) in enumerate(zip(ents, names)):
-        print(f"  {i:>3} {e['block']:>7} {e['off']:>5} {e['length']:>8}  "
-              f"${e['dest']:06X}  {fl:<{fw}}  ${e['crc']:08X}")
-
-def cmd_verify(path) -> bool:
-    img, h, ents = read_image(path)
-    ok = len(img) == h["blocks"] * BLOCK and len(img) % BLOCK == 0 and len(img) >= MIN_IMAGE
-    if not ok:
-        print(f"size mismatch or under {MIN_IMAGE} bytes: {len(img)} bytes, "
-              f"header says {h['blocks']} blocks")
-    for i, e in enumerate(ents):
-        p = e["block"] * BLOCK + e["off"]
-        if zlib.crc32(img[p:p + e["length"]]) != e["crc"]:
-            print(f"asset {i}: CRC mismatch")
-            ok = False
-    toc = img[HDR_SIZE:HDR_SIZE + TOC_ENTRY * h["count"]]
-    if zlib.crc32(toc + img[h["toc_blocks"] * BLOCK:]) != h["build_id"]:
-        print("build id mismatch")
-        ok = False
-    print("OK" if ok else "FAILED")
-    return ok
-
-
-def main(argv=None):
-    ap = argparse.ArgumentParser(prog="dmpkg", description=__doc__.split("\n")[1])
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    b = sub.add_parser("build", help="pack a project from a YAML manifest")
-    b.add_argument("manifest")
-    b.add_argument("-v", "--verbose", action="store_true")
-    sub.add_parser("list", help="show an image's TOC").add_argument("image")
-    sub.add_parser("verify", help="check an image's CRCs").add_argument("image")
-    args = ap.parse_args(argv)
-    try:
-        if args.cmd == "build":
-            build(args.manifest, args.verbose)
-        elif args.cmd == "list":
-            cmd_list(args.image)
-        else:
-            return 0 if cmd_verify(args.image) else 1
-    except PackError as e:
-        print(f"dmpkg: error: {e}", file=sys.stderr)
-        return 1
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

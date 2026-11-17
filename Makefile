@@ -9,17 +9,26 @@
 #   make asm        assemble the runtime for 6809 and 6309, report its size
 #   make clean      remove generated files (example assets included)
 #
+# The repo has two parts: the packer (python/, a Python project of its own)
+# and the 6809 runtime (asm/). The Makefile runs the packer from python/src
+# (python3 -m dmpkg); pip install -e python puts a dmpkg command on PATH.
+#
 # Override tools on the command line: make test LWASM=/path/to/lwasm
 
 PYTHON  ?= python3
 LWASM   ?= lwasm
 export LWASM
 
+# Run the packer from python/src without installing it
+# (pip install -e python also works)
+export PYTHONPATH := $(CURDIR)/python/src$(if $(PYTHONPATH),:$(PYTHONPATH))
+PACKER  := $(wildcard python/src/dmpkg/*.py)
+
 EXAMPLE  := example
 MANIFEST := $(EXAMPLE)/project.yaml
 BUILD    := $(EXAMPLE)/build
 IMAGE    := $(BUILD)/DEMO.SDS
-RUNTIME  := runtime/dmpkg.asm
+RUNTIME  := asm/dmpkg.asm
 ASSETS   := $(EXAMPLE)/assets/.stamp
 OUT      := build
 
@@ -31,16 +40,16 @@ $(ASSETS): $(EXAMPLE)/mkassets.py
 	$(PYTHON) $(EXAMPLE)/mkassets.py
 	@touch $@
 
-$(IMAGE): dmpkg.py $(MANIFEST) $(ASSETS)
-	$(PYTHON) dmpkg.py build $(MANIFEST) -v
+$(IMAGE): $(PACKER) $(MANIFEST) $(ASSETS)
+	$(PYTHON) -m dmpkg build $(MANIFEST) -v
 
 build: $(IMAGE)
 
 verify: $(IMAGE)
-	$(PYTHON) dmpkg.py verify $(IMAGE)
+	$(PYTHON) -m dmpkg verify $(IMAGE)
 
 list: $(IMAGE)
-	$(PYTHON) dmpkg.py list $(IMAGE)
+	$(PYTHON) -m dmpkg list $(IMAGE)
 
 # Assembled at $(ASM_ORG), not 0: at 0 the runtime's variables would land in
 # the direct page and come out smaller than in a real program.
@@ -56,7 +65,7 @@ asm: $(RUNTIME)
 	      "($$(wc -c < $(OUT)/dmpkg.nover.bin) with SDC_NOVERCHK), assembled at" '$(ASM_ORG)'
 
 test: verify asm
-	$(PYTHON) test/run_test.py
+	$(PYTHON) python/tests/run_test.py
 
 clean:
 	rm -rf $(BUILD) $(OUT) $(EXAMPLE)/assets

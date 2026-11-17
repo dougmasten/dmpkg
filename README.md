@@ -1,9 +1,9 @@
 # dmpkg — project disc packer for the CoCo SDC STREAM protocol
 
-`dmpkg` packs all of a project's assets into a single **stream image** on the SD card. A small 6809 runtime (`runtime/dmpkg.asm`, 962 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
+`dmpkg` packs all of a project's assets into a single **stream image** on the SD card. A small 6809 runtime (`asm/dmpkg.asm`, 962 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
 
 ```
-project.yaml ──► dmpkg.py build ──► build/DEMO.SDS      → SD card
+project.yaml ──► dmpkg build ───► build/DEMO.SDS      → SD card
                                   ├─► build/assets.inc     EQUs (no bytes)
                                   ├─► build/assettab.asm   mount name, build_id, descriptors
                                   └─► build/DEMO.map       layout report
@@ -12,10 +12,11 @@ project.yaml ──► dmpkg.py build ──► build/DEMO.SDS      → SD card
 ## Quick start
 
 ```sh
+pip install -e python              # dmpkg command (or: PYTHONPATH=python/src python3 -m dmpkg)
 python3 example/mkassets.py         # writes example/assets/ (random filler, fixed seed)
-python3 dmpkg.py build example/project.yaml -v
-python3 dmpkg.py verify example/build/DEMO.SDS
-python3 dmpkg.py list   example/build/DEMO.SDS
+dmpkg build example/project.yaml -v
+dmpkg verify example/build/DEMO.SDS
+dmpkg list   example/build/DEMO.SDS
 ```
 
 ```asm
@@ -35,7 +36,18 @@ python3 dmpkg.py list   example/build/DEMO.SDS
         include "assettab.asm"
 ```
 
-Requires Python 3.8+ and PyYAML.
+Requires Python 3.8+ and PyYAML (installed by `pip install -e python`).
+
+```
+python/         the packer, a Python project of its own
+  pyproject.toml
+  src/dmpkg/    pack.py (build, image reading), cli.py (commands)
+  tests/        end-to-end test of the packer and runtime (run_test.py)
+asm/            the 6809 runtime (dmpkg.asm)
+example/        example project and asset generator
+docs/           image format
+Makefile        builds the example and runs the tests across both parts
+```
 
 ## Manifest (YAML)
 
@@ -136,7 +148,7 @@ entry:  descriptor(12) crc32(4)
 
 ## Tests
 
-`test/run_test.py` assembles the real runtime with lwasm and runs it on a 6809 core (`pip install MC6809`). It talks to a strict CoCo SDC model and a CoCo 3 MMU. The model raises an error if data is read before READY, if READY isn't given time to settle (it stays stale for 20 cycles after each block), if `$FF4B` is read before `$FF4A`, if a register is read within 20µs of a command, if a read passes end of file, if `M:` is given an image under 82,944 bytes, or if a STREAM is issued on firmware older than 117. It also covers the firmware gate: 117 is accepted, while 116 and pre-113 firmware (no VERSION command) both give error 6 and never mount. A further run splits a DECB record's length word across a block that fails, and checks that error 5 comes back in A, both for the firmware's real behaviour (the stream ends with status `$08`) and for the FAILED bit the User Guide describes. Another stalls the card part way through the phys load, so READY never comes: with the runtime assembled at `SDC_TIMEOUT=1` to keep it short, it checks for error 4, a restored MMU window and a stopped stream. The test checks every loaded byte against the sources.
+`python/tests/run_test.py` assembles the real runtime with lwasm and runs it on a 6809 core (`pip install -e 'python[test]'` installs it, MC6809). It talks to a strict CoCo SDC model and a CoCo 3 MMU. The model raises an error if data is read before READY, if READY isn't given time to settle (it stays stale for 20 cycles after each block), if `$FF4B` is read before `$FF4A`, if a register is read within 20µs of a command, if a read passes end of file, if `M:` is given an image under 82,944 bytes, or if a STREAM is issued on firmware older than 117. It also covers the firmware gate: 117 is accepted, while 116 and pre-113 firmware (no VERSION command) both give error 6 and never mount. A further run splits a DECB record's length word across a block that fails, and checks that error 5 comes back in A, both for the firmware's real behaviour (the stream ends with status `$08`) and for the FAILED bit the User Guide describes. Another stalls the card part way through the phys load, so READY never comes: with the runtime assembled at `SDC_TIMEOUT=1` to keep it short, it checks for error 4, a restored MMU window and a stopped stream. The test checks every loaded byte against the sources.
 
 The test doesn't use `example/assets/`. Each run writes fresh random assets of the same sizes to a temp folder, with a new seed, and builds `example/project.yaml` there. It prints the seed, and `TEST_SEED=n` repeats that run. `example/mkassets.py` makes the example's own assets with a fixed seed, so the example image and the worked example in [docs/FORMAT.md](docs/FORMAT.md) come out the same every time.
 

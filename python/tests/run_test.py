@@ -32,9 +32,12 @@ from MC6809.components.memory import Memory
 from MC6809.tests.test_config import TestCfg
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-sys.path.insert(0, ROOT)
-import dmpkg  # noqa: E402
+ROOT = os.path.dirname(os.path.dirname(HERE))      # repo root: python/tests -> .
+try:
+    import dmpkg.pack as dmpkg  # noqa: E402
+except ImportError:
+    sys.exit("run_test: can't import dmpkg: pip install -e python or set "
+             "PYTHONPATH=python/src (make test does)")
 sys.path.insert(0, os.path.join(ROOT, "example"))
 import mkassets  # noqa: E402
 
@@ -310,7 +313,7 @@ def assemble(src_dir, build_dir, hdr_label, defines=()):
     lst = os.path.join(build_dir, "test.lst")
     subprocess.run([LWASM, "--6809", "--format=raw", "-o", out, f"--list={lst}",
                     *[f"-D{d}" for d in defines],
-                    "-I", os.path.join(ROOT, "runtime"), "-I", build_dir, asm], check=True)
+                    "-I", os.path.join(ROOT, "asm"), "-I", build_dir, asm], check=True)
     with open(out, "rb") as f:
         return f.read(), 0x1002
 
@@ -363,7 +366,7 @@ def decb_word_fail_test():
             f.write(FAIL_ASM)
         out = os.path.join(td, "t.bin")
         subprocess.run([LWASM, "--6809", "--format=raw", "-o", out,
-                        "-I", os.path.join(ROOT, "runtime"), "-I", td, asm], check=True)
+                        "-I", os.path.join(ROOT, "asm"), "-I", td, asm], check=True)
         with open(out, "rb") as f:
             prog = f.read()
     results = []

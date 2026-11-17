@@ -1,0 +1,75 @@
+"""
+dmpkg - project disc packer for the CoCo SDC STREAM protocol.
+
+Usage:
+  dmpkg build project.yaml [-v]
+  dmpkg list  IMAGE
+  dmpkg verify IMAGE
+
+(or python -m dmpkg ...)
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+import zlib
+
+from . import __version__
+from .pack import (BLOCK, F_DECB, F_PHYS, HDR_SIZE, MIN_IMAGE, TOC_ENTRY, PackError,
+                   build, read_image)
+
+
+def cmd_list(path):
+    img, h, ents = read_image(path)
+    print(f"{h['name']}  v{h['version']}  build ${h['build_id']:08X}  "
+          f"{h['blocks']} blocks  TOC {h['toc_blocks']}")
+    names = [",".join(n for n, b in (("phys", F_PHYS), ("decb", F_DECB)) if e["flags"] & b) or "-"
+             for e in ents]
+    fw = max([5] + [len(n) for n in names])
+    print()
+    print(f"  {'idx':>3} {'block':>7} {'off':>5} {'length':>8}  {'dest':<7}  {'flags':<{fw}}  crc32")
+    for i, (e, fl) in enumerate(zip(ents, names)):
+        print(f"  {i:>3} {e['block']:>7} {e['off']:>5} {e['length']:>8}  "
+              f"${e['dest']:06X}  {fl:<{fw}}  ${e['crc']:08X}")
+
+
+def cmd_verify(path) -> bool:
+    img, h, ents = read_image(path)
+    ok = len(img) == h["blocks"] * BLOCK and len(img) % BLOCK == 0 and len(img) >= MIN_IMAGE
+    if not ok:
+        print(f"size mismatch or under {MIN_IMAGE} bytes: {len(img)} bytes, "
+              f"header says {h['blocks']} blocks")
+    for i, e in enumerate(ents):
+        p = e["block"] * BLOCK + e["off"]
+        if zlib.crc32(img[p:p + e["length"]]) != e["crc"]:
+            print(f"asset {i}: CRC mismatch")
+            ok = False
+    toc = img[HDR_SIZE:HDR_SIZE + TOC_ENTRY * h["count"]]
+    if zlib.crc32(toc + img[h["toc_blocks"] * BLOCK:]) != h["build_id"]:
+        print("build id mismatch")
+        ok = False
+    print("OK" if ok else "FAILED")
+    return ok
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="dmpkg", description=__doc__.split("\n")[1])
+    ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    b = sub.add_parser("build", help="pack a project from a YAML manifest")
+    b.add_argument("manifest")
+    b.add_argument("-v", "--verbose", action="store_true")
+    sub.add_parser("list", help="show an image's TOC").add_argument("image")
+    sub.add_parser("verify", help="check an image's CRCs").add_argument("image")
+    args = ap.parse_args(argv)
+    try:
+        if args.cmd == "build":
+            build(args.manifest, args.verbose)
+        elif args.cmd == "list":
+            cmd_list(args.image)
+        else:
+            return 0 if cmd_verify(args.image) else 1
+    except PackError as e:
+        print(f"dmpkg: error: {e}", file=sys.stderr)
+        return 1
+    return 0

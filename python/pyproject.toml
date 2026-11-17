@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dmpkg"
+dynamic = ["version"]
+description = "Project disc packer for the CoCo SDC STREAM protocol"
+readme = "README.md"
+license = "Zlib"           # see LICENSE at the repo root
+authors = [{ name = "Doug Masten" }]
+requires-python = ">=3.8"
+dependencies = ["PyYAML"]
+
+[project.optional-dependencies]
+test = ["MC6809"]          # 6809 core for tests/run_test.py (also needs lwasm)
+
+[project.scripts]
+dmpkg = "dmpkg.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "dmpkg.__version__" }
