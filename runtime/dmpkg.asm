@@ -1,0 +1,743 @@
+;-------------------------------------------------------------------
+; dmpkg.asm - CoCo SDC STREAM loader for dmpkg images
+;
+; 6809 source (runs on HD6309 in either mode), lwasm syntax.
+; Pair with the files dmpkg generates:  equates (EQUs) and table
+; (mount name, header, 12-byte asset descriptors).
+;
+; Entry points
+;   sdc_open   X = mount name ("M:..." zero-terminated, e.g. SDC_MountName)
+;              Y = expected 4-byte build_id (SDC_BuildID) or 0 to skip the check
+;              Enters SDC command mode, checks the firmware supports STREAM
+;              (VERSION >= SDC_MINVER), mounts the image, starts a stream at
+;              block 0 and checks the build_id so a stale image is caught.
+;   sdc_load   X = asset descriptor
+;              Loads the asset to its destination. If the stream is already
+;              positioned at the asset (packed assets loaded in image
+;              order) it carries on without restarting the stream.
+;              decb assets: returns exec address in U.
+;   sdc_version
+;              Enters command mode, returns D = firmware version in BCD
+;              (e.g. $0124 for 124), or D = 0 if the firmware predates the
+;              VERSION command (before 113). Also stored in sdc_ver.
+;              Ends a running stream.
+;   sdc_stop   ends a running stream ($D0), stays in command mode
+;   sdc_close  sdc_stop, then puts the controller back in floppy
+;              emulation mode (write 0 to $FF40)
+;
+; All return carry clear on success, or carry set and A = error code:
+;   SDC_EMOUNT  1  mount failed (status bit 7 after $E0)
+;   SDC_EHDR    2  build_id in block 0 doesn't match (stale or wrong image)
+;   SDC_EEOF    3  stream ended (BUSY dropped) before the data was read
+;   SDC_ETIME   4  controller didn't answer in time
+;   SDC_EFAIL   5  controller reported an error (FAILED, or the stream ended
+;                  with status $08: card error)
+;   SDC_EVER    6  firmware too old for STREAM (sdc_ver holds its version)
+; On any error the stream is stopped. Registers other than A/CC (and U
+; for decb loads) are preserved.
+;
+; Protocol (CoCo SDC user guide ch. 7, firmware with STREAM support):
+;   $43 -> $FF40 command mode; status $FF48: b0 BUSY, b1 READY, b7 FAILED
+;   'V' -> $FF49, $C0 -> $FF48: version, BCD in $FF4A/$FF4B (FAILED if <113)
+;   $E0+drv mount, 256-byte name block written to $FF4A/$FF4B
+;   block# -> $FF49/$FF4A/$FF4B, $90+drv -> $FF48, poll READY,
+;   then 512 bytes per block read from $FF4A then $FF4B (LDD $FF4A),
+;   READY polled again before each following block. $D0 aborts.
+;
+; Configuration - define any of these before including to override:
+;   SDC_DRIVE    0      SDC drive slot used for the image (0 or 1)
+;   SDC_WINDOW   $4000  logical 8K window for phys (CoCo 3) loads, 8K-aligned,
+;                       $2000-$C000
+;   SDC_MMUREG          MMU register that maps SDC_WINDOW; default is the
+;                       task 0 one, $FFA0+SDC_WINDOW/$2000 ($FFA2 for $4000).
+;                       Define it for task 1 ($FFA8+...); it must be $FFA0-$FFAF
+;                       and map the same 8K slot as SDC_WINDOW
+;   SDC_MMU_HOME        if defined, block restored into SDC_MMUREG after a
+;                       phys load; otherwise the value read back before
+;                       the load is restored
+;   SDC_DELAY    12     settle loop before polling READY (8 cyc/pass: ~54us at
+;                       1.79MHz; the SDC needs ~20us to update READY; 1-65535)
+;   SDC_TIMEOUT  16     poll timeout, units of 65536 polls (1-255)
+;   SDC_MINVER   $0117  lowest firmware sdc_open accepts (117 added STREAM)
+;   SDC_NOVERCHK        if defined, sdc_open skips the version check
+;-------------------------------------------------------------------
+
+        ifndef  SDC_DRIVE
+SDC_DRIVE       equ     0
+        endc
+        if      SDC_DRIVE&$FFFE         ; added to the $E0/$90 command codes
+        error   "SDC_DRIVE must be 0 or 1"
+        endc
+        ifndef  SDC_WINDOW
+SDC_WINDOW      equ     $4000
+        endc
+        if      SDC_WINDOW&$1FFF
+        error   "SDC_WINDOW must be 8K-aligned"
+        endc
+        if      SDC_WINDOW<$2000        ; code tests the window's high byte
+        error   "SDC_WINDOW must be $2000-$C000"
+        endc
+        if      SDC_WINDOW>$C000        ; $E000 block holds I/O and vectors
+        error   "SDC_WINDOW must be $2000-$C000"
+        endc
+        ifndef  SDC_MMUREG
+SDC_MMUREG      equ     $FFA0+SDC_WINDOW/$2000  ; task 0 register for the window
+        endc
+        if      SDC_MMUREG<$FFA0
+        error   "SDC_MMUREG must be an MMU register, $FFA0-$FFAF"
+        endc
+        if      SDC_MMUREG>$FFAF
+        error   "SDC_MMUREG must be an MMU register, $FFA0-$FFAF"
+        endc
+        if      (SDC_MMUREG&7)-(SDC_WINDOW/$2000)
+        error   "SDC_MMUREG doesn't map SDC_WINDOW"
+        endc
+        ifndef  SDC_DELAY
+SDC_DELAY       equ     12
+        endc
+        if      SDC_DELAY<1             ; X counts down: 0 would be 65536 passes
+        error   "SDC_DELAY must be 1-65535"
+        endc
+        if      SDC_DELAY>$FFFF
+        error   "SDC_DELAY must be 1-65535"
+        endc
+        ifndef  SDC_TIMEOUT
+SDC_TIMEOUT     equ     16
+        endc
+        if      SDC_TIMEOUT<1           ; A counts down: 0 would be 256
+        error   "SDC_TIMEOUT must be 1-255"
+        endc
+        if      SDC_TIMEOUT>255
+        error   "SDC_TIMEOUT must be 1-255"
+        endc
+        ifndef  SDC_MINVER
+SDC_MINVER      equ     $0117
+        endc
+
+SDC_LATCH       equ     $FF40           ; control latch (write)
+SDC_STAT        equ     $FF48           ; command (write) / status (read)
+SDC_P1          equ     $FF49           ; parameter 1 / block high byte
+SDC_DATA        equ     $FF4A           ; parameter 2/3, data port ($FF4A,$FF4B)
+
+SDC_CMDMODE     equ     $43
+SDC_C_MOUNT     equ     $E0+SDC_DRIVE
+SDC_C_STREAM    equ     $90+SDC_DRIVE
+SDC_C_ABORT     equ     $D0
+SDC_C_QUERY     equ     $C0
+
+SDC_BUSY        equ     %00000001
+SDC_READY       equ     %00000010
+SDC_ERROR       equ     %00001000       ; set when a stream ends on an error
+
+; error codes, returned in A with carry set
+SDC_EMOUNT      equ     1               ; mount failed (file not found?)
+SDC_EHDR        equ     2               ; build_id mismatch: stale image
+SDC_EEOF        equ     3               ; stream ended before the data
+SDC_ETIME       equ     4               ; controller didn't answer in time
+SDC_EFAIL       equ     5               ; controller reported an error
+SDC_EVER        equ     6               ; firmware older than SDC_MINVER
+
+SDC_F_PHYS      equ     $80
+SDC_F_DECB      equ     $40
+
+SDC_WEND        equ     SDC_WINDOW+$2000
+
+; descriptor offsets
+SDC_D_BLK       equ     0
+SDC_D_OFF       equ     3
+SDC_D_LEN       equ     5
+SDC_D_FLAGS     equ     8
+SDC_D_DEST      equ     9
+
+;-------------------------------------------------------------------
+; state
+sdc_blk         rmb     3       ; block holding the next stream byte
+sdc_off         rmb     2       ; offset of the next byte in that block
+sdc_live        fcb     0       ; nonzero while a stream is running
+sdc_poll        rmb     1       ; nonzero: wait READY before the next byte
+sdc_left        rmb     3       ; bytes still to copy (24-bit)
+sdc_chunk       rmb     2       ; bytes in the current copy chunk
+sdc_phys        rmb     1       ; nonzero: destination is the MMU window
+sdc_mblk        rmb     1       ; block mapped in the window
+sdc_msave       rmb     1       ; window block before the load
+sdc_tmo         rmb     1       ; timeout outer counter
+sdc_ver         fdb     0       ; firmware version (BCD), set by sdc_version
+
+;------------------------------------------------------------------------------
+; Function    : sdc_open
+; Entry       : Reg X = mount name ("M:..." zero-terminated, e.g. SDC_MountName)
+;             :     Y = expected 4-byte build_id (SDC_BuildID), or 0 to skip it
+; Exit        : CC.C clear: image mounted, stream parked after the build_id
+;             : CC.C set  : A = error code (stream stopped)
+; Destroys    : A, CC
+; Calls       : sdc_version (sdc_stop with SDC_NOVERCHK), sdc_waitidle,
+;             : sdc_waitready, sdc_start, sdc_getbyte, sdc_fail
+; Description : Enters command mode, checks the firmware supports STREAM
+;             : (VERSION >= SDC_MINVER), mounts the image, starts a stream at
+;             : block 0 and compares the header's build_id (bytes 8-11) so a
+;             : stale image is caught.
+;------------------------------------------------------------------------------
+sdc_open
+        pshs    b,x,y,u
+        ifdef   SDC_NOVERCHK
+        lbsr    sdc_stop
+        lda     #SDC_CMDMODE
+        sta     SDC_LATCH
+        lbsr    sdc_waitidle
+        bcs     @err
+        else
+        lbsr    sdc_version             ; stops any stream, enters command mode
+        bcs     @err
+        cmpd    #SDC_MINVER
+        bhs     @ver_ok
+        lda     #SDC_EVER               ; ERROR CODE: firmware < 117
+        bra     @err
+@ver_ok
+        endc
+        lda     #SDC_C_MOUNT
+        sta     SDC_STAT
+        lbsr    sdc_waitready
+        bcs     @err
+        clra                            ; A counts 256 bytes, 2 per pass
+@name_lp
+        ldb     ,x                      ; name byte, or 0 padding once the
+        beq     @name_1                 ; terminator is reached (X parks on it)
+        leax    1,x
+@name_1
+        stb     SDC_DATA
+        ldb     ,x
+        beq     @name_2
+        leax    1,x
+@name_2
+        stb     SDC_DATA+1
+        adda    #2
+        bne     @name_lp
+        lbsr    sdc_waitidle
+        bcs     @err
+        lda     SDC_STAT
+        bpl     @mount_ok
+        lda     #SDC_EMOUNT             ; ERROR CODE: file not found
+        bra     @err
+@mount_ok
+        clra                            ; start stream at block 0
+        ldu     #0
+        lbsr    sdc_start
+        bcs     @err
+        ldy     3,s                     ; expected build_id pointer (saved Y)
+        beq     @ok
+        ldd     SDC_DATA                ; drop header bytes 0-7 (block 0 is
+        ldd     SDC_DATA                ; READY, read in $FF4A/$FF4B pairs)
+        ldd     SDC_DATA
+        ldd     SDC_DATA
+        ldd     SDC_DATA                ; bytes 8-11: build_id
+        cmpd    ,y
+        bne     @hdr_bad
+        ldd     SDC_DATA
+        cmpd    2,y
+        bne     @hdr_bad
+        ldd     #12                     ; stream position after the build_id
+        std     sdc_off
+@ok
+        andcc   #$fe                    ; clear carry (success)
+        puls    b,x,y,u,pc
+@hdr_bad
+        lda     #SDC_EHDR               ; ERROR CODE: stale image
+@err
+        lbsr    sdc_fail
+        puls    b,x,y,u,pc
+
+;------------------------------------------------------------------------------
+; Function    : sdc_version
+; Entry       : none
+; Exit        : CC.C clear: D = firmware version in BCD ($0124 = 124),
+;             :             0 if the firmware predates VERSION (before 113)
+;             : CC.C set  : A = SDC_ETIME
+; Destroys    : A, B, CC
+; Calls       : sdc_stop, sdc_waitidle
+; Description : Ends any running stream, enters command mode and sends the
+;             : VERSION command ($C0, 'V' in $FF49). The result is also kept
+;             : in sdc_ver.
+;------------------------------------------------------------------------------
+sdc_version
+        lbsr    sdc_stop
+        lda     #SDC_CMDMODE
+        sta     SDC_LATCH
+        lbsr    sdc_waitidle
+        bcs     @exit
+        lda     #'V
+        sta     SDC_P1
+        lda     #SDC_C_QUERY
+        sta     SDC_STAT
+        lbsr    sdc_waitidle
+        bcs     @exit
+        ldd     #0
+        tst     SDC_STAT                ; FAILED: no VERSION command (< 113)
+        bmi     @st
+        ldd     SDC_DATA
+@st     std     sdc_ver
+        andcc   #$fe                    ; clear carry (success)
+@exit   rts
+
+;------------------------------------------------------------------------------
+; Function    : sdc_stop
+; Entry       : none
+; Exit        : CC.C clear
+; Destroys    : CC
+; Calls       : sdc_waitidle
+; Description : Aborts a running stream ($D0) and waits for the controller.
+;             : Stays in command mode. Does nothing if no stream is running.
+;------------------------------------------------------------------------------
+sdc_stop
+        pshs    a
+        tst     sdc_live
+        beq     @exit
+        clr     sdc_live
+        lda     #SDC_C_ABORT
+        sta     SDC_STAT
+        lbsr    sdc_waitidle
+@exit   andcc   #$fe                    ; clear carry (success)
+        puls    a,pc
+
+;------------------------------------------------------------------------------
+; Function    : sdc_close
+; Entry       : none
+; Exit        : CC.C clear
+; Destroys    : CC
+; Calls       : sdc_stop
+; Description : Stops any stream, then returns the controller to floppy
+;             : emulation mode (0 to $FF40).
+;------------------------------------------------------------------------------
+sdc_close
+        bsr     sdc_stop
+        clr     SDC_LATCH
+        rts
+
+;------------------------------------------------------------------------------
+; Function    : sdc_fail
+; Entry       : Reg A = error code
+; Exit        : CC.C set, A = error code
+; Destroys    : CC
+; Calls       : sdc_stop
+; Description : Common error exit: stops the stream and sets carry.
+;------------------------------------------------------------------------------
+sdc_fail
+        bsr     sdc_stop                ; preserves A
+        orcc    #1                      ; set carry (error)
+        rts
+
+;------------------------------------------------------------------------------
+; Function    : sdc_load
+; Entry       : Reg X = 12-byte asset descriptor
+; Exit        : CC.C clear: asset loaded; decb assets: U = exec address
+;             : CC.C set  : A = error code (stream stopped)
+; Destroys    : A, CC (U for decb assets)
+; Calls       : sdc_start, sdc_copy, sdc_getword, sdc_fail
+; Description : Loads the asset to its destination. If the stream is already
+;             : parked at the asset (packed assets loaded in image order) it
+;             : carries on; otherwise it restarts at the asset's block and drops
+;             : the bytes before its offset. Phys assets go through the MMU
+;             : window; decb assets follow their records.
+;------------------------------------------------------------------------------
+sdc_load
+        pshs    b,x,y
+        tst     sdc_live                ; is the stream already parked here?
+        beq     @seek
+        ldd     SDC_D_BLK,x
+        cmpd    sdc_blk
+        bne     @seek
+        lda     SDC_D_BLK+2,x
+        cmpa    sdc_blk+2
+        bne     @seek
+        ldd     SDC_D_OFF,x
+        cmpd    sdc_off
+        beq     @here
+@seek
+        pshs    u
+        lda     SDC_D_BLK,x
+        ldu     SDC_D_BLK+1,x
+        lbsr    sdc_start
+        puls    u
+        lbcs    @err
+        ldd     SDC_D_OFF,x             ; skip to the asset's offset (0-511)
+        beq     @here
+        std     sdc_off                 ; stream position once skipped
+        lsra                            ; D = whole pairs to drop
+        rorb
+        tfr     d,y
+        leay    ,y                      ; (TFR leaves the flags alone)
+        beq     @skip_odd
+@skip_lp
+        ldd     SDC_DATA                ; drop a pair: $FF4A then $FF4B
+        leay    -1,y
+        bne     @skip_lp
+@skip_odd
+        lda     SDC_D_OFF+1,x
+        bita    #1
+        beq     @here
+        lda     SDC_DATA                ; odd: drop the pair's 1st byte, so
+@here                                   ; the next read is $FF4B
+        lda     SDC_D_FLAGS,x
+        bita    #SDC_F_DECB
+        bne     @decb
+        ldd     SDC_D_LEN,x
+        std     sdc_left
+        lda     SDC_D_LEN+2,x
+        sta     sdc_left+2
+        lda     SDC_D_FLAGS,x
+        bita    #SDC_F_PHYS
+        bne     @phys
+        clr     sdc_phys
+        pshs    u
+        ldu     SDC_D_DEST+1,x
+        lbsr    sdc_copy
+        puls    u
+        lbcs    @err
+        bra     @ok
+; CoCo 3 physical load through the MMU window
+@phys   pshs    u
+        ifdef   SDC_MMU_HOME
+        lda     #SDC_MMU_HOME
+        else
+        lda     SDC_MMUREG
+        endc
+        sta     sdc_msave
+        lda     SDC_D_DEST,x            ; block = dest >> 13
+        ldb     SDC_D_DEST+1,x
+        lsra
+        rorb
+        lsra
+        rorb
+        lsra
+        rorb
+        lsra
+        rorb
+        lsra
+        rorb
+        stb     sdc_mblk
+        stb     SDC_MMUREG
+        ldd     SDC_D_DEST+1,x          ; window offset = dest & $1FFF
+        anda    #$1F
+        addd    #SDC_WINDOW
+        tfr     d,u
+        sta     sdc_phys                ; nonzero (window is never in page 0)
+        lbsr    sdc_copy
+        pshs    a,cc
+        lda     sdc_msave
+        sta     SDC_MMUREG
+        clr     sdc_phys
+        puls    a,cc
+        puls    u
+        lbcs    @err
+        bra     @ok
+; decb records: [len.w addr.w data]... [0000 exec.w]
+@decb   clr     sdc_phys
+        clr     sdc_left
+@decb_lp
+        lbsr    sdc_getword             ; D = length
+        lbcs    @err
+        std     sdc_left+1
+        beq     @decb_end
+        lbsr    sdc_getword             ; D = load address
+        lbcs    @err
+        tfr     d,u
+        lbsr    sdc_copy
+        lbcs    @err
+        bra     @decb_lp
+@decb_end
+        lbsr    sdc_getword             ; exec address
+        lbcs    @err
+        tfr     d,u
+@ok     andcc   #$fe                    ; clear carry (success)
+        puls    b,x,y,pc
+@err    lbsr    sdc_fail
+        puls    b,x,y,pc
+
+;------------------------------------------------------------------------------
+; Function    : sdc_start
+; Entry       : Reg A = block number bits 23-16
+;             :     U = block number bits 15-0
+; Exit        : CC.C clear: stream running, first block READY
+;             : CC.C set  : A = error code
+; Destroys    : A, CC
+; Calls       : sdc_stop, sdc_waitidle, sdc_waitready
+; Description : Stops any running stream, then starts a new one at the block
+;             : and resets the stream position to offset 0.
+;------------------------------------------------------------------------------
+sdc_start
+        lbsr    sdc_stop
+        sta     sdc_blk
+        stu     sdc_blk+1
+        sta     SDC_P1
+        stu     SDC_DATA
+        lda     #SDC_CMDMODE
+        sta     SDC_LATCH
+        bsr     sdc_waitidle
+        bcs     @exit
+        lda     #SDC_C_STREAM
+        sta     SDC_STAT
+        bsr     sdc_waitready
+        bcs     @exit
+        clr     sdc_off
+        clr     sdc_off+1
+        clr     sdc_poll
+        inc     sdc_live
+@exit   rts
+
+;------------------------------------------------------------------------------
+; Function    : sdc_settle
+; Entry       : none
+; Exit        : none
+; Destroys    : CC
+; Calls       : none
+; Description : Delay loop of SDC_DELAY passes, so the SDC has ~20us after a
+;             : command before its registers are read.
+;------------------------------------------------------------------------------
+sdc_settle
+        pshs    x
+        ldx     #SDC_DELAY
+@lp     leax    -1,x
+        bne     @lp
+        puls    x,pc
+
+;------------------------------------------------------------------------------
+; Function    : sdc_waitidle
+; Entry       : none
+; Exit        : CC.C clear: BUSY clear
+;             : CC.C set  : A = SDC_ETIME
+; Destroys    : A, CC
+; Calls       : sdc_settle
+; Description : Settles, then polls status until BUSY clears or the
+;             : SDC_TIMEOUT x 65536 poll limit runs out.
+;------------------------------------------------------------------------------
+sdc_waitidle
+        bsr     sdc_settle
+        pshs    x
+        lda     #SDC_TIMEOUT
+        sta     sdc_tmo
+        ldx     #0
+@lp     lda     SDC_STAT
+        bita    #SDC_BUSY
+        beq     @ok
+        leax    -1,x
+        bne     @lp
+        dec     sdc_tmo
+        bne     @lp
+        lda     #SDC_ETIME              ; ERROR CODE: BUSY timeout
+        orcc    #1                      ; set carry (error)
+        puls    x,pc
+@ok     andcc   #$fe                    ; clear carry (success)
+        puls    x,pc
+
+;------------------------------------------------------------------------------
+; Function    : sdc_waitready
+; Entry       : none
+; Exit        : CC.C clear: READY set
+;             : CC.C set  : A = SDC_EFAIL (FAILED, or BUSY dropped with
+;             :             SDC_ERROR), SDC_EEOF (BUSY dropped, status $00:
+;             :             end of file) or SDC_ETIME
+; Destroys    : A, CC
+; Calls       : sdc_settle
+; Description : Settles, then polls status until READY is set, the controller
+;             : fails, the stream ends, or the poll limit runs out.
+;------------------------------------------------------------------------------
+sdc_waitready
+        bsr     sdc_settle
+        pshs    x
+        lda     #SDC_TIMEOUT
+        sta     sdc_tmo
+        ldx     #0
+@lp     lda     SDC_STAT
+        bmi     @fail
+        bita    #SDC_READY
+        bne     @ok
+        bita    #SDC_BUSY
+        beq     @eof
+        leax    -1,x
+        bne     @lp
+        dec     sdc_tmo
+        bne     @lp
+        lda     #SDC_ETIME              ; ERROR CODE: READY timeout
+        bra     @err
+@fail   lda     #SDC_EFAIL              ; ERROR CODE: SDC reported FAILED
+        bra     @err
+@eof    bita    #SDC_ERROR              ; firmware ends a failed stream with
+        bne     @fail                   ; $08 (no FAILED bit), a clean one $00
+        lda     #SDC_EEOF               ; ERROR CODE: end of file
+@err    orcc    #1                      ; set carry (error)
+        puls    x,pc
+@ok     andcc   #$fe                    ; clear carry (success)
+        puls    x,pc
+
+;------------------------------------------------------------------------------
+; Function    : sdc_getbyte
+; Entry       : none
+; Exit        : CC.C clear: A = next stream byte
+;             : CC.C set  : A = error code
+; Destroys    : A, CC
+; Calls       : sdc_waitready, sdc_nextblk
+; Description : Reads one byte from $FF4A (even offset) or $FF4B (odd offset),
+;             : waiting for READY first at the start of each block.
+;------------------------------------------------------------------------------
+sdc_getbyte
+        pshs    b,x
+        tst     sdc_poll
+        beq     @rd
+        bsr     sdc_waitready
+        bcs     @exit
+        clr     sdc_poll
+@rd     ldx     sdc_off
+        tfr     x,d
+        bitb    #1
+        bne     @odd
+        lda     SDC_DATA                ; even offset: first byte of the pair
+        bra     @adv
+@odd    lda     SDC_DATA+1              ; odd offset: second byte
+@adv    leax    1,x
+        cmpx    #512
+        bne     @st
+        bsr     sdc_nextblk
+        ldx     #0
+@st     stx     sdc_off
+        andcc   #$fe                    ; clear carry (success)
+@exit   puls    b,x,pc
+
+;------------------------------------------------------------------------------
+; Function    : sdc_getword
+; Entry       : none
+; Exit        : CC.C clear: D = next two stream bytes (big-endian)
+;             : CC.C set  : A = error code
+; Destroys    : A, B, CC
+; Calls       : sdc_getbyte
+; Description : Reads a 16-bit big-endian value from the stream.
+;------------------------------------------------------------------------------
+sdc_getword
+        bsr     sdc_getbyte
+        bcs     @error
+        tfr     a,b                     ; B = 1st byte (GetByte preserves B)
+        bsr     sdc_getbyte
+        bcs     @error                  ; A = error code
+        exg     a,b                     ; D = 1st:2nd
+@error  rts
+
+;------------------------------------------------------------------------------
+; Function    : sdc_nextblk
+; Entry       : none
+; Exit        : none
+; Destroys    : CC
+; Calls       : none
+; Description : Steps sdc_blk to the next block and flags that READY must be
+;             : polled before its first byte is read.
+;------------------------------------------------------------------------------
+sdc_nextblk
+        pshs    a
+        inc     sdc_blk+2
+        bne     @exit
+        inc     sdc_blk+1
+        bne     @exit
+        inc     sdc_blk
+@exit   lda     #1
+        sta     sdc_poll
+        puls    a,pc
+
+;------------------------------------------------------------------------------
+; Function    : sdc_copy
+; Entry       : Reg U = destination
+;             : sdc_left  = bytes to copy (24-bit)
+;             : sdc_phys  = nonzero if U is in the MMU window (sdc_mblk mapped)
+; Exit        : CC.C clear: U advanced past the data
+;             : CC.C set  : A = error code
+; Destroys    : A, CC (U advanced)
+; Calls       : sdc_waitready, sdc_nextblk
+; Description : Copies stream bytes in chunks capped by the end of the block,
+;             : the bytes left and, for phys loads, the end of the window (the
+;             : next 8K is mapped when it fills). Inner loop: 8x LDD/STD.
+;------------------------------------------------------------------------------
+sdc_copy
+        pshs    b,x,y
+        ldx     #SDC_DATA
+@lp     lda     sdc_left
+        ora     sdc_left+1
+        ora     sdc_left+2
+        lbeq    @done
+        tst     sdc_poll                ; new block: wait for the buffer
+        beq     @nopoll
+        lbsr    sdc_waitready
+        lbcs    @exit
+        clr     sdc_poll
+@nopoll tst     sdc_phys
+        beq     @room
+        cmpu    #SDC_WEND               ; window full: map the next 8K
+        bne     @room
+        inc     sdc_mblk
+        lda     sdc_mblk
+        sta     SDC_MMUREG
+        ldu     #SDC_WINDOW
+@room   ldd     #512                    ; chunk = bytes left in this block
+        subd    sdc_off
+        tst     sdc_left                ; capped by bytes left to copy
+        bne     @c1
+        cmpd    sdc_left+1
+        bls     @c1
+        ldd     sdc_left+1
+@c1     tst     sdc_phys                ; and by room left in the window
+        beq     @c2
+        std     sdc_chunk
+        ldd     #SDC_WEND
+        pshs    u
+        subd    ,s++
+        cmpd    sdc_chunk
+        bls     @c2
+        ldd     sdc_chunk
+@c2     std     sdc_chunk
+        tfr     d,y                     ; Y = bytes to copy now
+        ldd     sdc_left+1              ; sdc_left -= chunk
+        subd    sdc_chunk
+        std     sdc_left+1
+        bcc     @l2
+        dec     sdc_left
+@l2     ldb     sdc_off+1               ; odd offset: pick up the 2nd byte first
+        bitb    #1
+        beq     @w16
+        lda     1,x
+        sta     ,u+
+        leay    -1,y
+@w16    cmpy    #16
+        blo     @w2
+        ldd     ,x
+        std     ,u++
+        ldd     ,x
+        std     ,u++
+        ldd     ,x
+        std     ,u++
+        ldd     ,x
+        std     ,u++
+        ldd     ,x
+        std     ,u++
+        ldd     ,x
+        std     ,u++
+        ldd     ,x
+        std     ,u++
+        ldd     ,x
+        std     ,u++
+        leay    -16,y
+        bra     @w16
+@w2     cmpy    #2
+        blo     @w1
+        ldd     ,x
+        std     ,u++
+        leay    -2,y
+        bra     @w2
+@w1     leay    ,y
+        beq     @adv
+        lda     ,x                      ; odd tail: 1st byte of the next pair
+        sta     ,u+
+@adv    ldd     sdc_off                 ; advance stream position
+        addd    sdc_chunk
+        cmpd    #512
+        bne     @so
+        lbsr    sdc_nextblk
+        ldd     #0
+@so     std     sdc_off
+        lbra    @lp
+@done   andcc   #$fe                    ; clear carry (success)
+@exit   puls    b,x,y,pc
