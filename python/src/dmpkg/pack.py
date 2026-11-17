@@ -10,10 +10,12 @@ import os
 from . import decb, image, layout, manifest, outputs
 
 
-def build(manifest_path: str, verbose=False) -> dict:
+def build(manifest_path: str, verbose=False, loader=True) -> dict:
     """Build the project a manifest describes and write its outputs (paths
-    relative to the manifest): image, and if given, equates, table and map."""
-    project, assets = manifest.load(manifest_path)
+    relative to the manifest): image, and if given, equates, table and map.
+    loader=False leaves a disk's loader off: the first pass of a two-pass
+    build, which only needs the include files."""
+    project, assets = manifest.load(manifest_path, loader)
 
     # ---- placement and size
     toc_bytes, toc_blocks = image.toc_size(len(assets))

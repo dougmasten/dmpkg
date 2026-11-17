@@ -166,9 +166,9 @@ With `disk:` in the manifest, the image is also a standard 35-track DECB disk (1
 The loader embeds `SDC_BuildID` and the descriptors, so it's assembled against the include files of the same build. Build twice:
 
 ```sh
-dmpkg build project.yaml          # pass 1: include files (notes the loader isn't built yet)
+dmpkg build project.yaml --no-loader   # pass 1: include files, disk without the loader
 lwasm --6809 --format=decb -I asm -I build -o build/LOADER.BIN loader.asm
-dmpkg build project.yaml          # pass 2: same layout, loader on the disk
+dmpkg build project.yaml               # pass 2: same layout, loader on the disk
 ```
 
 Asset placement and `build_id` don't depend on the loader, so pass 2 writes the same include files. The `Makefile` does this for the example, whose `example/loader.asm` loads every asset and returns to BASIC.

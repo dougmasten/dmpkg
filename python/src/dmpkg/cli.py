@@ -105,12 +105,14 @@ def main(argv=None):
     b = sub.add_parser("build", help="pack a project from a YAML manifest")
     b.add_argument("manifest")
     b.add_argument("-v", "--verbose", action="store_true")
+    b.add_argument("--no-loader", action="store_true",
+                   help="leave the disk's loader off (first pass of a two-pass build)")
     sub.add_parser("list", help="show an image's TOC").add_argument("image")
     sub.add_parser("verify", help="check an image's CRCs").add_argument("image")
     args = ap.parse_args(argv)
     try:
         if args.cmd == "build":
-            build(args.manifest, args.verbose)
+            build(args.manifest, args.verbose, loader=not args.no_loader)
         elif args.cmd == "list":
             cmd_list(args.image)
         else:

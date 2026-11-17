@@ -589,7 +589,15 @@ def run_all(ex, src):
     # puts it on the disk
     man = os.path.join(ex, "project.yaml")
     build = os.path.join(ex, "build")
-    pack.build(man)
+    note = io.StringIO()
+    with contextlib.redirect_stderr(note):        # a loader that's just missing...
+        pack.build(man)
+    chk("LOADER.BIN not found yet" in note.getvalue(),
+        "missing loader: disk built without it, with a note")
+    note = io.StringIO()
+    with contextlib.redirect_stderr(note):        # ...and pass 1, which expects that
+        pack.build(man, loader=False)
+    chk(note.getvalue() == "", "pass 1 (--no-loader): built quietly without the loader")
     incs = [os.path.join(build, f) for f in ("assets.inc", "assettab.asm")]
     pass1 = [read(f) for f in incs]
     loader = lwasm(os.path.join(ROOT, "example", "loader.asm"),

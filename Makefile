@@ -48,7 +48,7 @@ $(ASSETS): $(EXAMPLE)/mkassets.py
 # the image rebuilt with it on the disk. Asset placement and build_id don't
 # depend on the loader, so pass 2 writes the same include files.
 $(PASS1): $(PACKER) $(MANIFEST) $(ASSETS)
-	$(PYTHON) -m dmpkg build $(MANIFEST)
+	$(PYTHON) -m dmpkg build $(MANIFEST) --no-loader
 	@touch $@
 
 $(LOADER): $(EXAMPLE)/loader.asm $(RUNTIME) $(PASS1)

@@ -95,8 +95,10 @@ def sdc_name(path: str) -> str:
 
 # ---------------------------------------------------------------- the file
 
-def load(path: str) -> tuple[Project, list[Asset]]:
-    """Read and check a manifest; the assets come back unplaced."""
+def load(path: str, loader: bool = True) -> tuple[Project, list[Asset]]:
+    """Read and check a manifest; the assets come back unplaced. With
+    loader=False the disk's loader isn't read (first pass of a two-pass
+    build, before it's assembled)."""
     with open(path, "r", encoding="utf-8") as f:
         doc = yaml.safe_load(f)
     if not isinstance(doc, dict) or "project" not in doc or "assets" not in doc:
@@ -109,12 +111,12 @@ def load(path: str) -> tuple[Project, list[Asset]]:
     bad = set(proj) - KNOWN_PROJECT
     if bad:
         raise PackError(f"project: unknown key(s) {sorted(bad)}")
-    project = _project(path, proj)
+    project = _project(path, proj, loader)
     seen = set()
     return project, [_asset(project, i, a, seen) for i, a in enumerate(raw_assets)]
 
 
-def _project(path: str, proj: dict) -> Project:
+def _project(path: str, proj: dict, with_loader: bool) -> Project:
     base = os.path.dirname(os.path.abspath(path))
     name = str(proj.get("name", "PROJECT"))
     image = proj.get("image")
@@ -146,7 +148,11 @@ def _project(path: str, proj: dict) -> Project:
     loader, autoexec = None, False
     if disk is not False:
         if "loader" in disk:
-            loader = _loader(base, str(disk["loader"]))
+            lpath = str(disk["loader"])
+            if with_loader:
+                loader = _loader(base, lpath)
+            else:
+                decb.file_name(lpath, "project.disk.loader")    # still check the name
         autoexec = disk.get("autoexec", "loader" in disk)
         if not isinstance(autoexec, bool):
             raise PackError("project.disk.autoexec must be true or false")
