@@ -150,8 +150,9 @@ SDC_EEOF        equ     5               ; stream ended before the data
 SDC_ETIME       equ     6               ; controller didn't answer in time
 SDC_EFAIL       equ     7               ; controller reported an error
 
-SDC_F_PHYS      equ     $80
-SDC_F_DECB      equ     $40
+; asset descriptor flags (sdc_desc.flags)
+SDC_F_PHYS      equ     $80             ; dest is a CoCo 3 physical address
+SDC_F_DECB      equ     $40             ; data is DECB records (exec in U)
 
 ; asset descriptor (12 bytes, as dmpkg generates them in the table)
 sdc_desc        struct
