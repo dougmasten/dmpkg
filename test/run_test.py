@@ -13,6 +13,8 @@ The SDC model enforces the protocol as documented and raises on misuse:
   - any register read within CMD_SETTLE cycles of a command write (20us rule)
   - fail_block: the stream fails at that block, with fail_status: $08 and
     BUSY clear (what the firmware does), or $81 (FAILED, as the guide says)
+  - stall_block: once the stream reaches that block it stays BUSY and never
+    READY (a hung card), so the runtime must time out
   - VERSION ($C0 'V') answers in BCD, or FAILS on firmware before 113;
     STREAM is rejected on firmware before 117
 """
@@ -54,6 +56,7 @@ class MockSDC:
         self.cmd_at = -CMD_SETTLE
         self.fail_block = None        # block number whose read fails
         self.fail_status = 0x08       # firmware: stream ends, $08, no FAILED bit
+        self.stall_block = None       # block where the stream hangs (BUSY, never READY)
         self.cmdmode = False
         self.params = [0, 0, 0]
         self.status = 0
@@ -86,6 +89,8 @@ class MockSDC:
                 return 0x00
             if s["blk"] == self.fail_block:
                 return self.fail_status
+            if s["blk"] == self.stall_block:
+                return 0x01            # BUSY forever
             return 0x03 if self.now >= self.ready_at else 0x01
         if self.now < self.busy_until:
             return 0x01
@@ -297,13 +302,14 @@ badid   fcb     $12,$34,$56,$78
 """
 
 
-def assemble(src_dir, build_dir, hdr_label):
+def assemble(src_dir, build_dir, hdr_label, defines=()):
     asm = os.path.join(build_dir, "test.asm")
     with open(asm, "w") as f:
         f.write(TEST_ASM.replace("{hdr}", hdr_label))
     out = os.path.join(build_dir, "test.bin")
     lst = os.path.join(build_dir, "test.lst")
     subprocess.run([LWASM, "--6809", "--format=raw", "-o", out, f"--list={lst}",
+                    *[f"-D{d}" for d in defines],
                     "-I", os.path.join(ROOT, "runtime"), "-I", build_dir, asm], check=True)
     with open(out, "rb") as f:
         return f.read(), 0x1002
@@ -444,6 +450,21 @@ def run_all(ex, src):
     m = Machine({"GAMES/DEMO.SDS": img[:dmpkg.MIN_IMAGE - 512]})
     m.run(prog, 0x1000, done)
     chk(m.peek(0x100, 1) == b"\x01", "image under 82,944 bytes -> SDC_EMOUNT")
+
+    # ---- run 3c: card hangs part way through TITLE (phys load): READY never
+    # comes, so sdc_waitready times out. SDC_TIMEOUT=1 (65536 polls) keeps
+    # the run short; the MMU window must be put back even on the error.
+    tprog, tdone = assemble(ex, build, "SDC_BuildID", defines=["SDC_TIMEOUT=1"])
+    m = Machine(files)
+    m.sdc.stall_block = A["TITLE"].block + 1
+    c0 = m.cpu.cycles
+    m.run(tprog, 0x1000, tdone, max_ops=50_000_000)
+    err = m.peek(0x100, 1)[0]
+    chk(err == 4, f"card stalls in TITLE -> SDC_ETIME (A=${err:02X}, "
+                  f"{m.cpu.cycles - c0} cycles)")
+    chk(m.mmu == 0x3A, "  MMU window restored after the error")
+    chk(m.sdc.stream is None and ("abort",) in m.sdc.log, "  stream stopped after the error")
+    chk(m.peek(0x6000, 767) == src["font.bin"], "  assets before it still loaded")
 
     # ---- run 4-6: firmware version gate (117 added STREAM, 113 VERSION)
     for fw, want, what in ((0x0117, 0, "firmware 117 accepted"),
