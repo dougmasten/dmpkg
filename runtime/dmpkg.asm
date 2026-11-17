@@ -162,6 +162,7 @@ sdc_live        fcb     0       ; nonzero while a stream is running
 sdc_poll        rmb     1       ; nonzero: wait READY before the next byte
 sdc_left        rmb     3       ; bytes still to copy (24-bit)
 sdc_chunk       rmb     2       ; bytes in the current copy chunk
+sdc_n           rmb     1       ; 32-byte groups left in the chunk
 sdc_phys        rmb     1       ; nonzero: destination is the MMU window
 sdc_mblk        rmb     1       ; block mapped in the window
 sdc_msave       rmb     1       ; window block before the load
@@ -655,7 +656,8 @@ sdc_nextblk
 ; Calls       : sdc_waitready, sdc_nextblk
 ; Description : Copies stream bytes in chunks capped by the end of the block,
 ;             : the bytes left and, for phys loads, the end of the window (the
-;             : next 8K is mapped when it fills). Inner loop: 8x LDD/STD.
+;             : next 8K is mapped when it fills). Inner loop: 32 bytes per
+;             : pass, 16x LDD ,X / STD n,U.
 ;------------------------------------------------------------------------------
 sdc_copy
         pshs    b,x,y
@@ -663,11 +665,13 @@ sdc_copy
 @lp     lda     sdc_left
         ora     sdc_left+1
         ora     sdc_left+2
-        lbeq    @done
-        tst     sdc_poll                ; new block: wait for the buffer
+        bne     @more
+        andcc   #$fe                    ; clear carry (success)
+@exit   puls    b,x,y,pc
+@more   tst     sdc_poll                ; new block: wait for the buffer
         beq     @nopoll
         jsr     sdc_waitready
-        lbcs    @exit
+        bcs     @exit
         clr     sdc_poll
 @nopoll tst     sdc_phys
         beq     @room
@@ -702,30 +706,59 @@ sdc_copy
         dec     sdc_left
 @l2     ldb     sdc_off+1               ; odd offset: pick up the 2nd byte first
         bitb    #1
-        beq     @w16
+        beq     @even
         lda     1,x
         sta     ,u+
         leay    -1,y
-@w16    cmpy    #16
-        blo     @w2
+@even   tfr     y,d                     ; split the chunk into 32-byte groups
+        andb    #31                     ; and a 0-31 byte tail
+        clra
+        exg     d,y                     ; Y = tail, D = chunk (0-512)
+        aslb                            ; A = D/32 (D < 1024, so D<<3 >> 8)
+        rola
+        aslb
+        rola
+        aslb
+        rola
+        sta     sdc_n
+        beq     @w2
+        leau    16,u                    ; mid-group: offsets -16..14 fit 5 bits
+@w32    ldd     ,x
+        std     -16,u
         ldd     ,x
-        std     ,u++
+        std     -14,u
         ldd     ,x
-        std     ,u++
+        std     -12,u
         ldd     ,x
-        std     ,u++
+        std     -10,u
         ldd     ,x
-        std     ,u++
+        std     -8,u
         ldd     ,x
-        std     ,u++
+        std     -6,u
         ldd     ,x
-        std     ,u++
+        std     -4,u
         ldd     ,x
-        std     ,u++
+        std     -2,u
         ldd     ,x
-        std     ,u++
-        leay    -16,y
-        bra     @w16
+        std     ,u
+        ldd     ,x
+        std     2,u
+        ldd     ,x
+        std     4,u
+        ldd     ,x
+        std     6,u
+        ldd     ,x
+        std     8,u
+        ldd     ,x
+        std     10,u
+        ldd     ,x
+        std     12,u
+        ldd     ,x
+        std     14,u
+        leau    32,u
+        dec     sdc_n
+        bne     @w32
+        leau    -16,u                   ; U back to the next free byte
 @w2     cmpy    #2
         blo     @w1
         ldd     ,x
@@ -744,5 +777,3 @@ sdc_copy
         ldd     #0
 @so     std     sdc_off
         lbra    @lp
-@done   andcc   #$fe                    ; clear carry (success)
-@exit   puls    b,x,y,pc

@@ -1,6 +1,6 @@
 # dmpkg — project disc packer for the CoCo SDC STREAM protocol
 
-`dmpkg` packs all of a project's assets into a single **stream image** on the SD card. A small 6809 runtime (`runtime/dmpkg.asm`, 912 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
+`dmpkg` packs all of a project's assets into a single **stream image** on the SD card. A small 6809 runtime (`runtime/dmpkg.asm`, 962 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
 
 ```
 project.yaml ──► dmpkg.py build ──► build/DEMO.SDS      → SD card
@@ -117,7 +117,7 @@ Every call returns carry clear on success. On failure it returns carry set and t
 
 **Firmware check:** `sdc_open` first sends the SDC `VERSION` command (`$C0`, `$FF49` = `'V'`). The command arrived in firmware 113, and older firmware answers FAILED, which counts as version 0. `STREAM` arrived in 117. If the version is below `SDC_MINVER` (`$0117`), `sdc_open` returns error 6 before mounting anything. `sdc_ver` keeps the version it read, so you can report it. Define `SDC_NOVERCHK` to skip the check.
 
-`sdc_load` skips the restart when the stream is already sitting at the asset. Otherwise it restarts at the asset's block and skips its offset. Copies run in chunks capped by three things: the end of the 512-byte block, the bytes left, and the end of the MMU window. Inside a chunk the inner loop is 8× unrolled `LDD $FF4A / STD ,U++`. Odd offsets and odd lengths take one byte from `$FF4B` or `$FF4A`, so the A-then-B read order is always kept.
+`sdc_load` skips the restart when the stream is already sitting at the asset. Otherwise it restarts at the asset's block and skips its offset. Copies run in chunks capped by three things: the end of the 512-byte block, the bytes left, and the end of the MMU window. Inside a chunk the inner loop copies 32 bytes per pass: 16 × `LDD $FF4A / STD n,U` with 5-bit offsets (U points at the middle of the group), then one `LEAU 32,U` and a `DEC`/`BNE` group counter, about 6 cycles per byte. The 0–31 byte tail goes 2 bytes at a time. Odd offsets and odd lengths take one byte from `$FF4B` or `$FF4A`, so the A-then-B read order is always kept.
 
 **Phys loads:** the asset is mapped through the 8K window at `SDC_WINDOW` (default `$4000–$5FFF`). Its MMU register `SDC_MMUREG` is worked out from the window as the task 0 register `$FFA0 + SDC_WINDOW/$2000` (`$FFA2` by default). Define `SDC_MMUREG` yourself to use task 1. It must be an MMU register (`$FFA0–$FFAF`) for the same 8K slot as the window, so `$FFA2` or `$FFAA` for `$4000`. The window must be 8K-aligned and between `$2000` and `$C000`, or the include stops with an assembly error. The next 8K block is mapped every time the window fills. Afterwards the register is put back to the value it held before. If your board doesn't read MMU registers back cleanly, define `SDC_MMU_HOME`. Keep code, stack and the descriptor out of the window.
 
