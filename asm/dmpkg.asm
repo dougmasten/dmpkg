@@ -10,7 +10,7 @@
 ;                  or 0 to use the image already in SDC_DRIVE (a dmpkg disk
 ;                  image the loader was run from)
 ;              Y = expected 4-byte build_id (SDC_BuildID) or 0 to skip the check
-;              Enters SDC command mode, checks the firmware supports STREAM
+;              Checks a CoCo SDC is present and its firmware supports STREAM
 ;              (VERSION >= SDC_MINVER), mounts the image, starts a stream at
 ;              block 0 and checks the build_id so a stale image is caught.
 ;   sdc_load   X = asset descriptor
@@ -18,6 +18,8 @@
 ;              positioned at the asset (packed assets loaded in image
 ;              order) it carries on without restarting the stream.
 ;              decb assets: returns exec address in U.
+;   sdc_init   Checks a CoCo SDC is present (SDC_ENODEV if not), then gets
+;              its firmware version like sdc_version. sdc_open calls it.
 ;   sdc_version
 ;              Enters command mode, returns D = firmware version in BCD
 ;              (e.g. $0124 for 124), or D = 0 if the firmware predates the
@@ -35,6 +37,7 @@
 ;   SDC_EFAIL   5  controller reported an error (FAILED, or the stream ended
 ;                  with status $08: card error)
 ;   SDC_EVER    6  firmware too old for STREAM (sdc_ver holds its version)
+;   SDC_ENODEV  7  no CoCo SDC found
 ; On any error the stream is stopped. Registers other than A/CC (and U
 ; for decb loads) are preserved.
 ;
@@ -117,6 +120,8 @@ SDC_MINVER      equ     $0117
         endc
 
 SDC_LATCH       equ     $FF40           ; control latch (write)
+SDC_FDATA       equ     $FF42           ; Flash data register (write)
+SDC_FCTL        equ     $FF43           ; Flash control register (bank)
 SDC_STAT        equ     $FF48           ; command (write) / status (read)
 SDC_P1          equ     $FF49           ; parameter 1 / block high byte
 SDC_DATA        equ     $FF4A           ; parameter 2/3, data port ($FF4A,$FF4B)
@@ -138,6 +143,7 @@ SDC_EEOF        equ     3               ; stream ended before the data
 SDC_ETIME       equ     4               ; controller didn't answer in time
 SDC_EFAIL       equ     5               ; controller reported an error
 SDC_EVER        equ     6               ; firmware older than SDC_MINVER
+SDC_ENODEV      equ     7               ; no CoCo SDC found
 
 ; skip2: CMPX # opcode, swallows the next 2-byte instruction (changes CC)
 skip2           macro
@@ -172,90 +178,31 @@ sdc_tmo         rmb     1       ; timeout outer counter
 sdc_ver         fdb     0       ; firmware version (BCD), set by sdc_version
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_open
-; Entry       : Reg X = mount name ("M:..." zero-terminated, e.g. SDC_MountName),
-;             :         or 0 to stream the image already in SDC_DRIVE
-;             :     Y = expected 4-byte build_id (SDC_BuildID), or 0 to skip it
-; Exit        : CC.C clear: image mounted, stream parked after the build_id
-;             : CC.C set  : A = error code (stream stopped)
-; Destroys    : A, CC
-; Calls       : sdc_version (sdc_stop with SDC_NOVERCHK), sdc_waitidle,
-;             : sdc_waitready, sdc_start, sdc_getbyte, sdc_fail
-; Description : Enters command mode, checks the firmware supports STREAM
-;             : (VERSION >= SDC_MINVER), mounts the image (unless X = 0),
-;             : starts a stream at block 0 and compares the header's build_id
-;             : (bytes 8-11) so a stale image is caught.
+; Function    : sdc_init
+; Entry       : none
+; Exit        : CC.C clear: D = firmware version in BCD ($0124 = 124),
+;             :             0 if the firmware predates VERSION (before 113)
+;             : CC.C set  : A = SDC_ENODEV or SDC_ETIME
+; Destroys    : A, B, CC
+; Calls       : sdc_version
+; Description : Checks a CoCo SDC is present, then gets its firmware version
+;             : (also kept in sdc_ver). The check writes the Flash data
+;             : register ($FF42) and reads the Flash control register
+;             : ($FF43), whose bits 5-6 follow it on an SDC; without one, it
+;             : returns SDC_ENODEV before any command is written. If found,
+;             : the controller is left in command mode (sdc_close leaves it).
 ;------------------------------------------------------------------------------
-sdc_open
-        pshs    b,x,y,u
-        ifdef   SDC_NOVERCHK
-        jsr     sdc_stop
-        lda     #SDC_CMDMODE
-        sta     SDC_LATCH
-        jsr     sdc_waitidle
-        bcs     @err
-        else
-        jsr     sdc_version             ; stops any stream, enters command mode
-        bcs     @err
-        cmpd    #SDC_MINVER
-        bhs     @ver_ok
-        lda     #SDC_EVER               ; ERROR CODE: firmware < 117
-        bra     @err
-@ver_ok
-        endc
-        leax    ,x                      ; X = 0: no mount, the image is
-        beq     @mount_ok               ; already in SDC_DRIVE
-        lda     #SDC_C_MOUNT
-        sta     SDC_STAT
-        jsr     sdc_waitready
-        bcs     @err
-        clra                            ; A counts 256 bytes, 2 per pass
-@name_lp
-        ldb     ,x                      ; name byte, or 0 padding once the
-        beq     @name_1                 ; terminator is reached (X parks on it)
-        leax    1,x
-@name_1
-        stb     SDC_DATA
-        ldb     ,x
-        beq     @name_2
-        leax    1,x
-@name_2
-        stb     SDC_DATA+1
-        adda    #2
-        bne     @name_lp
-        jsr     sdc_waitidle
-        bcs     @err
-        lda     SDC_STAT
-        bpl     @mount_ok
-        lda     #SDC_EMOUNT             ; ERROR CODE: file not found
-        bra     @err
-@mount_ok
-        clra                            ; start stream at block 0
-        ldu     #0
-        jsr     sdc_start
-        bcs     @err
-        ldy     3,s                     ; expected build_id pointer (saved Y)
-        beq     @ok
-        ldd     SDC_DATA                ; drop header bytes 0-7 (block 0 is
-        ldd     SDC_DATA                ; READY, read in $FF4A/$FF4B pairs)
-        ldd     SDC_DATA
-        ldd     SDC_DATA
-        ldd     SDC_DATA                ; bytes 8-11: build_id
-        cmpd    ,y
-        bne     @hdr_bad
-        ldd     SDC_DATA
-        cmpd    2,y
-        bne     @hdr_bad
-        ldd     #12                     ; stream position after the build_id
-        std     sdc_off
-@ok
-        andcc   #$fe                    ; clear carry (success)
-        puls    b,x,y,u,pc
-@hdr_bad
-        lda     #SDC_EHDR               ; ERROR CODE: stale image
-@err
-        jsr     sdc_fail
-        puls    b,x,y,u,pc
+sdc_init
+        lda     #$64                    ; Flash data: bits 5-6 set
+        sta     SDC_FDATA
+        ldb     SDC_FCTL
+        clr     SDC_FDATA               ; Flash data: bits 5-6 clear
+        eorb    SDC_FCTL                ; bits that followed the data
+        cmpb    #$60
+        beq     sdc_version             ; found: get the firmware version
+        lda     #SDC_ENODEV             ; ERROR CODE: no CoCo SDC
+        orcc    #1                      ; set carry (error)
+        rts
 
 ;------------------------------------------------------------------------------
 ; Function    : sdc_version
@@ -288,6 +235,87 @@ sdc_version
 @st     std     sdc_ver
         andcc   #$fe                    ; clear carry (success)
 @exit   rts
+
+;------------------------------------------------------------------------------
+; Function    : sdc_open
+; Entry       : Reg X = mount name ("M:..." zero-terminated, e.g. SDC_MountName),
+;             :         or 0 to stream the image already in SDC_DRIVE
+;             :     Y = expected 4-byte build_id (SDC_BuildID), or 0 to skip it
+; Exit        : CC.C clear: image mounted, stream parked after the build_id
+;             : CC.C set  : A = error code (stream stopped)
+; Destroys    : A, CC
+; Calls       : sdc_init (sdc_stop with SDC_NOVERCHK), sdc_waitidle,
+;             : sdc_waitready, sdc_start, sdc_getbyte, sdc_fail
+; Description : Checks a CoCo SDC is present and its firmware supports STREAM
+;             : (VERSION >= SDC_MINVER), mounts the image (unless X = 0),
+;             : starts a stream at block 0 and compares the header's build_id
+;             : (bytes 8-11) so a stale image is caught.
+;------------------------------------------------------------------------------
+sdc_open
+        pshs    b,x,y,u
+        ifdef   SDC_NOVERCHK
+        jsr     sdc_stop
+        lda     #SDC_CMDMODE
+        sta     SDC_LATCH
+        jsr     sdc_waitidle
+        bcs     @err
+        else
+        jsr     sdc_init                ; SDC present? stops any stream,
+        bcs     @err                    ; enters command mode
+        cmpd    #SDC_MINVER
+        bhs     @ver_ok
+        lda     #SDC_EVER               ; ERROR CODE: firmware < 117
+        bra     @err
+@ver_ok
+        endc
+        leax    ,x                      ; X = 0: no mount, the image is
+        beq     @mount_ok               ; already in SDC_DRIVE
+        lda     #SDC_C_MOUNT
+        sta     SDC_STAT
+        jsr     sdc_waitready
+        bcs     @err
+        clra                            ; A counts 256 bytes, 2 per pass
+@name_lp
+        ldb     ,x                      ; name byte, or 0 padding once the
+        beq     @name_1                 ; terminator is reached (X parks on it)
+        leax    1,x
+@name_1 stb     SDC_DATA
+        ldb     ,x
+        beq     @name_2
+        leax    1,x
+@name_2 stb     SDC_DATA+1
+        adda    #2
+        bne     @name_lp
+        jsr     sdc_waitidle
+        bcs     @err
+        lda     SDC_STAT
+        bpl     @mount_ok
+        lda     #SDC_EMOUNT             ; ERROR CODE: file not found
+        bra     @err
+@mount_ok
+        clra                            ; start stream at block 0
+        ldu     #0
+        jsr     sdc_start
+        bcs     @err
+        ldy     3,s                     ; expected build_id pointer (saved Y)
+        beq     @ok
+        ldd     SDC_DATA                ; drop header bytes 0-7
+        ldd     SDC_DATA                ;  "     "      "    "
+        ldd     SDC_DATA                ;  "     "      "    "
+        ldd     SDC_DATA                ;  "     "      "    "
+        ldd     SDC_DATA                ; bytes 8-11: build_id
+        cmpd    ,y
+        bne     @ehdr                   ; fail build_id check
+        ldd     SDC_DATA
+        cmpd    2,y
+        bne     @ehdr                   ; fail build_id check
+        ldd     #12                     ; stream position after the build_id
+        std     sdc_off
+@ok     andcc   #$fe                    ; clear carry (success)
+        puls    b,x,y,u,pc
+@ehdr   lda     #SDC_EHDR               ; ERROR CODE: stale image
+@err    jsr     sdc_fail
+        puls    b,x,y,u,pc
 
 ;------------------------------------------------------------------------------
 ; Function    : sdc_stop

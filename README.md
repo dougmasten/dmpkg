@@ -1,6 +1,6 @@
 # dmpkg — project disc packer for the CoCo SDC STREAM protocol
 
-`dmpkg` packs all of a project's assets into a single image on the SD card. A small 6809 runtime (`asm/dmpkg.asm`, 966 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
+`dmpkg` packs all of a project's assets into a single image on the SD card. A small 6809 runtime (`asm/dmpkg.asm`, 989 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
 
 The image can also be a DECB disk that holds your loader program, so the whole project is one `.DSK` file: mount it, run the loader (or let `AUTOEXEC.BAS` do it), and the loader streams the assets from that same file. See [Single-file disk image](#single-file-disk-image).
 
@@ -111,6 +111,7 @@ Descriptor: `+0 block(3) +3 offset(2) +5 length(3) +8 flags(1) +9 dest(3)`. Flag
 | call | in | out |
 |---|---|---|
 | `sdc_open` | X = mount name, or 0 for the image already in `SDC_DRIVE`; Y = build_id or 0 | firmware checked, stream parked after the build_id |
+| `sdc_init` | — | CoCo SDC found; D = firmware version as `sdc_version` gives it. Leaves command mode on (`sdc_close` to leave) |
 | `sdc_version` | — | D = firmware version in BCD (`$0124`), `0` if before 113; also in `sdc_ver` |
 | `sdc_load` | X = descriptor | asset loaded; U = exec for decb |
 | `sdc_getbyte` | — | A = next stream byte |
@@ -131,10 +132,13 @@ Every call returns carry clear on success. On failure it returns carry set and t
 | 4 | `SDC_ETIME` | any call | BUSY or READY didn't change within `SDC_TIMEOUT` × 65536 polls | no SDC answering (missing, or wrong Multi-Pak slot), or a stuck controller. Raise `SDC_TIMEOUT` only if a slow card really needs it |
 | 5 | `SDC_EFAIL` | `sdc_open`, `sdc_load`, `sdc_getbyte` | the controller reported an error: FAILED (status bit 7) set, or the stream ended (BUSY cleared) with status `$08` instead of `$00`. The firmware ends a failed stream with `$08` and doesn't set FAILED, contrary to the User Guide | SD card read error, card removed, or the controller rejected the command |
 | 6 | `SDC_EVER` | `sdc_open` | firmware is older than `SDC_MINVER` (117, the first with STREAM) | update the SDC firmware. `sdc_ver` holds the version it found (BCD), or 0 if the firmware predates the VERSION command (before 113) |
+| 7 | `SDC_ENODEV` | `sdc_init`, `sdc_open` | no CoCo SDC answered the presence check | no SDC plugged in, or the Multi-Pak switch is on another slot. Nothing was sent to the controller |
 
-`sdc_version` itself only fails with `SDC_ETIME`: old firmware isn't an error there, it just returns 0. `sdc_stop` and `sdc_close` always succeed.
+`sdc_version` itself only fails with `SDC_ETIME`: old firmware isn't an error there, it just returns 0. `sdc_init` adds `SDC_ENODEV`. `sdc_stop` and `sdc_close` always succeed.
 
-**Firmware check:** `sdc_open` first sends the SDC `VERSION` command (`$C0`, `$FF49` = `'V'`). The command arrived in firmware 113, and older firmware answers FAILED, which counts as version 0. `STREAM` arrived in 117. If the version is below `SDC_MINVER` (`$0117`), `sdc_open` returns error 6 before mounting anything. `sdc_ver` keeps the version it read, so you can report it. Define `SDC_NOVERCHK` to skip the check.
+**Presence check:** `sdc_init` (and so `sdc_open`) first writes `$64`, then `$00`, to the Flash data register (`$FF42`) and reads the Flash control register (`$FF43`) after each write. On a CoCo SDC, bits 5–6 of `$FF43` follow the data register, so the two reads differ by exactly `$60`. Anything else means no SDC, and it returns error 7 at once, without sending a command or waiting for a timeout. The check doesn't set the Flash program bit or change the bank, so it's safe with code running from the cartridge ROM. The method comes from the FUZIX CoCo SDC driver (`devsdc_exist`); the User Guide doesn't describe one.
+
+**Firmware check:** `sdc_open` then sends the SDC `VERSION` command (`$C0`, `$FF49` = `'V'`). The command arrived in firmware 113, and older firmware answers FAILED, which counts as version 0. `STREAM` arrived in 117. If the version is below `SDC_MINVER` (`$0117`), `sdc_open` returns error 6 before mounting anything. `sdc_ver` keeps the version it read, so you can report it. Define `SDC_NOVERCHK` to skip the check.
 
 `sdc_load` skips the restart when the stream is already sitting at the asset. Otherwise it restarts at the asset's block and skips its offset. Copies run in chunks capped by three things: the end of the 512-byte block, the bytes left, and the end of the MMU window. Inside a chunk the inner loop copies 32 bytes per pass: 16 × `LDD $FF4A / STD n,U` with 5-bit offsets (U points at the middle of the group), then one `LEAU 32,U` and a `DEC`/`BNE` group counter, about 6 cycles per byte. The 0–31 byte tail goes 2 bytes at a time. Odd offsets and odd lengths take one byte from `$FF4B` or `$FF4A`, so the A-then-B read order is always kept.
 
@@ -192,6 +196,7 @@ Other targets: `make build`, `make verify`, `make list`, `make asm` (assembles t
 
 - The protocol comes from the CoCo SDC guide (as quoted in nowhereman999's `SDC_Stream_File_Library.asm` and VCC's stream emulation). The tests run against a model of the SDC, not a real one. You need STREAM-capable firmware (117 or later). `sdc_open` checks this.
 - Drive 1 (`SDC_DRIVE equ 1` → `$E1`/`$91`) follows the command-bit pattern but hasn't been confirmed.
+- The presence check (`$FF42`/`$FF43`) is taken from the FUZIX driver and modelled in the test, not tried on a real SDC. On a machine with a regular floppy controller instead, `$FF42` is likely a mirror of the drive latch at `$FF40`, so the check briefly selects drives (motor off) before saying no SDC.
 - `sdc_stop` waits for BUSY to clear after `$D0`. The guide says BUSY stays set until EOF or abort; the old library polled READY there instead.
 - `SDC_DELAY` assumes the CPU runs at 1.79 MHz or slower. If you run a 6309 in native mode, raise it.
 - Disk images: toolshed's `decb` reads the example disk (directory, free space, `LOADER.BIN`, `AUTOEXEC.BAS`), but STREAM on a disk that SDC-DOS mounted with `DRIVE`, `AUTOEXEC.BAS` running the loader, and the hard-disk-size padding past 720 sectors all come from the guide and the firmware disassembly, not from a real SDC.

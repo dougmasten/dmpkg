@@ -18,6 +18,10 @@ The SDC model enforces the protocol as documented and raises on misuse:
   - VERSION ($C0 'V') answers in BCD, or FAILS on firmware before 113;
     STREAM is rejected on firmware before 117
   - mounted=: an image already in drive 0, as when the loader came off it
+  - Flash registers: bits 5-6 of the $FF42 data register read back in
+    $FF43 (what sdc_init's presence check relies on)
+  - present=False: no SDC at all; its registers read $FF and any command
+    written is logged as an error
 
 The example builds as a single-file DECB disk: its loader is assembled and
 put on the disk, then read back through the DECB directory and run. The
@@ -63,8 +67,11 @@ class SDCError(Exception):
 
 
 class MockSDC:
-    def __init__(self, cpu, files, firmware=0x0127, mounted=None):
+    def __init__(self, cpu, files, firmware=0x0127, mounted=None, present=True):
         self.cpu, self.files = cpu, files
+        self.present = present        # False: nothing answers at $FF40-$FF4B
+        self.fdata = 0                # Flash data register ($FF42)
+        self.bank = 0                 # Flash bank (bits 0-2 of $FF43)
         self.firmware = firmware      # BCD, e.g. 0x0127
         self.version_reply = None     # bytes readable at $FF4A/$FF4B
         self.cmd_at = -CMD_SETTLE
@@ -88,11 +95,23 @@ class MockSDC:
         return self.cpu.cycles
 
     # -- status
+    # -- Flash registers
+    def write_fdata(self, _c, _a, _addr, v):
+        self.fdata = v
+        return v
+
+    def read_fctl(self, *_):
+        if not self.present:
+            return 0xFF
+        return self.bank | (self.fdata & 0x60)
+
     def settle_check(self, addr):
         if self.now - self.cmd_at < CMD_SETTLE:
             raise SDCError(f"read ${addr:04X} {self.now - self.cmd_at} cycles after a command")
 
     def read_stat(self, *_):
+        if not self.present:
+            return 0xFF                # empty bus: looks BUSY forever
         self.settle_check(0xFF48)
         st = self.status
         s = self.stream
@@ -121,6 +140,9 @@ class MockSDC:
         return v
 
     def write_cmd(self, _c, _a, _addr, v):
+        if not self.present:
+            self.log.append(("command with no SDC", v))
+            return v
         if not self.cmdmode:
             raise SDCError(f"command ${v:02X} outside command mode")
         if self.now < self.busy_until:
@@ -192,6 +214,8 @@ class MockSDC:
         return v
 
     def read_data(self, _c, _a, addr):
+        if not self.present:
+            return 0xFF
         self.settle_check(addr)
         s = self.stream
         if s is None and self.version_reply is not None:
@@ -221,17 +245,19 @@ class MockSDC:
 
 
 class Machine:
-    def __init__(self, files, firmware=0x0127, mounted=None):
+    def __init__(self, files, firmware=0x0127, mounted=None, present=True):
         cfg = TestCfg({"verbosity": None, "display_cycle": False, "trace": None,
                        "bus_socket_host": None, "bus_socket_port": None, "ram": None,
                        "rom": None, "max_ops": None, "use_bus": False})
         self.mem = Memory(cfg)
         self.cpu = CPU(self.mem, cfg)
-        self.sdc = MockSDC(self.cpu, files, firmware, mounted)
+        self.sdc = MockSDC(self.cpu, files, firmware, mounted, present)
         self.phys = bytearray(0x200000)
         self.mmu = 0x3A                       # arbitrary home block for $4000
         m = self.mem
         m.add_write_byte_callback(self.sdc.write_latch, 0xFF40)
+        m.add_write_byte_callback(self.sdc.write_fdata, 0xFF42)
+        m.add_read_byte_callback(self.sdc.read_fctl, 0xFF43)
         m.add_write_byte_callback(self.sdc.write_cmd, 0xFF48)
         m.add_read_byte_callback(self.sdc.read_stat, 0xFF48)
         m.add_write_byte_callback(self.sdc.write_param, 0xFF49, 0xFF4B)
@@ -379,6 +405,46 @@ def assemble(src_dir, build_dir, hdr_label, defines=()):
         return f.read(), 0x1002
 
 
+INIT_ASM = r"""
+        org     $1000
+        bra     start
+done    bra     done
+start
+        jsr     sdc_init
+        std     $0104               D = version, or A = error code
+        tfr     cc,a
+        sta     $0100               CC: carry in bit 0
+        jsr     sdc_close
+        bra     done
+
+        include "dmpkg.asm"
+"""
+
+
+def init_test():
+    """sdc_init: finds the SDC and returns its version in D (0 before 113),
+    or SDC_ENODEV without writing a command when nothing is there; sdc_open
+    on a machine with no SDC fails the same way."""
+    results = []
+    with tempfile.TemporaryDirectory() as td:
+        prog = lwasm_src(INIT_ASM, td)
+    for fw, want in ((0x0129, 0x0129), (0x0117, 0x0117), (0x0110, 0)):
+        m = Machine({}, firmware=fw)
+        m.run(prog, 0x1000, 0x1002)
+        cc, d = m.peek(0x100, 1)[0], int.from_bytes(m.peek(0x104, 2), "big")
+        results.append(check(not cc & 1 and d == want and not m.sdc.cmdmode,
+                             f"sdc_init, firmware {fw:X}: D=${d:04X}, carry {cc & 1}, "
+                             "back in emulation mode after sdc_close"))
+    m = Machine({}, present=False)
+    c0 = m.cpu.cycles
+    m.run(prog, 0x1000, 0x1002)
+    cc, a = m.peek(0x100, 1)[0], m.peek(0x104, 1)[0]
+    results.append(check(cc & 1 and a == 7 and not m.sdc.log,
+                         f"sdc_init, no SDC -> SDC_ENODEV (A=${a:02X}, carry {cc & 1}, "
+                         f"{m.cpu.cycles - c0} cycles, no command written)"))
+    return all(results)
+
+
 FAIL_ASM = r"""
         org     $1000
         bra     start
@@ -452,6 +518,7 @@ def main():
         src = mkassets.make(os.path.join(ex, "assets"), seed)
         ok = run_all(ex, src)
         ok &= disk_layout_test()
+        ok &= init_test()
         ok &= decb_word_fail_test()
     print("ALL PASS" if ok else "SOME FAILED")
     return 0 if ok else 1
@@ -571,6 +638,12 @@ def run_all(ex, src):
     chk(m.mmu == 0x3A, "  MMU window restored after the error")
     chk(m.sdc.stream is None and ("abort",) in m.sdc.log, "  stream stopped after the error")
     chk(m.peek(0x6000, 767) == src["font.bin"], "  assets before it still loaded")
+
+    # ---- no SDC at all: sdc_open stops at the presence check
+    m = Machine(files_on_card, present=False)
+    m.run(prog, 0x1000, done)
+    err = m.peek(0x100, 1)[0]
+    chk(err == 7 and not m.sdc.log, f"no SDC -> SDC_ENODEV, no command written (A=${err:02X})")
 
     # ---- run 4-6: firmware version gate (117 added STREAM, 113 VERSION)
     for fw, want, what in ((0x0117, 0, "firmware 117 accepted"),
