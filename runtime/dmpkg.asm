@@ -776,4 +776,4 @@ sdc_copy
         jsr     sdc_nextblk
         ldd     #0
 @so     std     sdc_off
-        lbra    @lp
+        jmp     @lp
