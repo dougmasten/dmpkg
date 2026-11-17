@@ -85,6 +85,7 @@ SDC_WINDOW      equ     $4000
         if      SDC_WINDOW>$C000        ; $E000 block holds I/O and vectors
         error   "SDC_WINDOW must be $2000-$C000"
         endc
+SDC_WEND        equ     SDC_WINDOW+$2000        ; end of the window
         ifndef  SDC_MMUREG
 SDC_MMUREG      equ     $FFA0+SDC_WINDOW/$2000  ; task 0 register for the window
         endc
@@ -147,8 +148,6 @@ SDC_ENODEV      equ     7               ; no CoCo SDC found
 
 SDC_F_PHYS      equ     $80
 SDC_F_DECB      equ     $40
-
-SDC_WEND        equ     SDC_WINDOW+$2000
 
 ; asset descriptor (12 bytes, as dmpkg generates them in the table)
 sdc_desc        struct
