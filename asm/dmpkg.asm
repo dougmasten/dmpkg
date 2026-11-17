@@ -150,12 +150,14 @@ SDC_F_DECB      equ     $40
 
 SDC_WEND        equ     SDC_WINDOW+$2000
 
-; descriptor offsets
-SDC_D_BLK       equ     0
-SDC_D_OFF       equ     3
-SDC_D_LEN       equ     5
-SDC_D_FLAGS     equ     8
-SDC_D_DEST      equ     9
+; asset descriptor (12 bytes, as dmpkg generates them in the table)
+sdc_desc        struct
+blk             rmb     3               ; block where the data starts
+off             rmb     2               ; byte offset in that block (0-511)
+len             rmb     3               ; stored length
+flags           rmb     1               ; SDC_F_PHYS, SDC_F_DECB
+dest            rmb     3               ; CPU or physical address
+                endstruct
 
 ;-------------------------------------------------------------------
 ; state
@@ -376,23 +378,23 @@ sdc_load
         pshs    b,x,y
         tst     sdc_live                ; is the stream already parked here?
         beq     @seek
-        ldd     SDC_D_BLK,x
+        ldd     sdc_desc.blk,x
         cmpd    sdc_blk
         bne     @seek
-        lda     SDC_D_BLK+2,x
+        lda     sdc_desc.blk+2,x
         cmpa    sdc_blk+2
         bne     @seek
-        ldd     SDC_D_OFF,x
+        ldd     sdc_desc.off,x
         cmpd    sdc_off
         beq     @here
 @seek
         pshs    u
-        lda     SDC_D_BLK,x
-        ldu     SDC_D_BLK+1,x
+        lda     sdc_desc.blk,x
+        ldu     sdc_desc.blk+1,x
         jsr     sdc_start
         puls    u
         lbcs    @err
-        ldd     SDC_D_OFF,x             ; skip to the asset's offset (0-511)
+        ldd     sdc_desc.off,x             ; skip to the asset's offset (0-511)
         beq     @here
         std     sdc_off                 ; stream position once skipped
         lsra                            ; D = whole pairs to drop
@@ -405,24 +407,24 @@ sdc_load
         leay    -1,y
         bne     @skip_lp
 @skip_odd
-        lda     SDC_D_OFF+1,x
+        lda     sdc_desc.off+1,x
         bita    #1
         beq     @here
         lda     SDC_DATA                ; odd: drop the pair's 1st byte, so
 @here                                   ; the next read is $FF4B
-        lda     SDC_D_FLAGS,x
+        lda     sdc_desc.flags,x
         bita    #SDC_F_DECB
         bne     @decb
-        ldd     SDC_D_LEN,x
+        ldd     sdc_desc.len,x
         std     sdc_left
-        lda     SDC_D_LEN+2,x
+        lda     sdc_desc.len+2,x
         sta     sdc_left+2
-        lda     SDC_D_FLAGS,x
+        lda     sdc_desc.flags,x
         bita    #SDC_F_PHYS
         bne     @phys
         clr     sdc_phys
         pshs    u
-        ldu     SDC_D_DEST+1,x
+        ldu     sdc_desc.dest+1,x
         jsr     sdc_copy
         puls    u
         lbcs    @err
@@ -435,8 +437,8 @@ sdc_load
         lda     SDC_MMUREG
         endc
         sta     sdc_msave
-        lda     SDC_D_DEST,x            ; block = dest >> 13
-        ldb     SDC_D_DEST+1,x
+        lda     sdc_desc.dest,x            ; block = dest >> 13
+        ldb     sdc_desc.dest+1,x
         lsra
         rorb
         lsra
@@ -449,7 +451,7 @@ sdc_load
         rorb
         stb     sdc_mblk
         stb     SDC_MMUREG
-        ldd     SDC_D_DEST+1,x          ; window offset = dest & $1FFF
+        ldd     sdc_desc.dest+1,x          ; window offset = dest & $1FFF
         anda    #$1F
         addd    #SDC_WINDOW
         tfr     d,u
@@ -549,13 +551,13 @@ sdc_waitidle
         lda     #SDC_TIMEOUT
         sta     sdc_tmo
         ldx     #0
-@lp     lda     SDC_STAT
+@loop   lda     SDC_STAT
         bita    #SDC_BUSY
         beq     @ok
         leax    -1,x
-        bne     @lp
+        bne     @loop
         dec     sdc_tmo
-        bne     @lp
+        bne     @loop
         lda     #SDC_ETIME              ; ERROR CODE: BUSY timeout
         orcc    #1                      ; set carry (error)
         puls    x,pc
@@ -591,7 +593,7 @@ sdc_waitready
         dec     sdc_tmo
         bne     @loop
         lda     #SDC_ETIME              ; ERROR CODE: READY timeout
-        fcb     $8C                     ; CMPX #: skips the lda below
+        fcb     $8C                     ; skip 2 bytes
 @fail   lda     #SDC_EFAIL              ; ERROR CODE: SDC reported FAILED
 @err    orcc    #1                      ; set carry (error)
         puls    x,pc
@@ -615,11 +617,11 @@ sdc_waitready
 sdc_getbyte
         pshs    b,x
         tst     sdc_poll
-        beq     @rd
+        beq     @ready
         bsr     sdc_waitready
         bcs     @exit
         clr     sdc_poll
-@rd     ldx     sdc_off
+@ready  ldx     sdc_off
         tfr     x,d
         bitb    #1
         bne     @odd
