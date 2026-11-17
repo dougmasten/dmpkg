@@ -398,15 +398,14 @@ def cmd_list(path):
     img, h, ents = read_image(path)
     print(f"{h['name']}  v{h['version']}  build ${h['build_id']:08X}  "
           f"{h['blocks']} blocks  TOC {h['toc_blocks']}")
+    names = [",".join(n for n, b in (("phys", F_PHYS), ("decb", F_DECB)) if e["flags"] & b) or "-"
+             for e in ents]
+    fw = max([5] + [len(n) for n in names])
     print()
-    print(f"  {'idx':>3} {'block':>7} {'off':>5} {'length':>8}  {'dest':<7}  {'flags':<5}  crc32")
-    for i, e in enumerate(ents):
-        fl = "".join(c for c, b in (("P", F_PHYS), ("D", F_DECB)) if e["flags"] & b)
+    print(f"  {'idx':>3} {'block':>7} {'off':>5} {'length':>8}  {'dest':<7}  {'flags':<{fw}}  crc32")
+    for i, (e, fl) in enumerate(zip(ents, names)):
         print(f"  {i:>3} {e['block']:>7} {e['off']:>5} {e['length']:>8}  "
-              f"${e['dest']:06X}  {fl or '-':<5}  ${e['crc']:08X}")
-    print("\n  flags: P = phys (dest is a CoCo 3 physical address), "
-          "D = decb (records, dest unused)")
-
+              f"${e['dest']:06X}  {fl:<{fw}}  ${e['crc']:08X}")
 
 def cmd_verify(path) -> bool:
     img, h, ents = read_image(path)
