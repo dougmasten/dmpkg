@@ -93,6 +93,8 @@ assets:
 - **Layout:** first fit in manifest order. Each asset takes the first free space it fits in, so assets normally follow each other back to back. `align: true` starts an asset on a fresh 512-byte block instead, and a later asset small enough to fit goes in the gap that leaves (the example's CODE sits in the gap before TITLE). Assets you load in image order come in one stream with no restart. Out of order, `sdc_load` restarts at the asset's block and skips to its offset, which costs a STREAM command and a card seek, so `align` mostly matters if you want block-aligned data. The map report and `dmpkg list` show where everything went.
 - **Validation:** unknown keys, overlapping `load`/`phys`, loads that run past `$FFFF` or 2MB, bad 8.3 names and malformed DECB files are all errors.
 
+Every key, default and check is described in [docs/MANIFEST.md](docs/MANIFEST.md).
+
 ## Generated symbols
 
 | symbol | meaning |
