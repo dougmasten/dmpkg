@@ -21,10 +21,10 @@ def equates(project: Project, assets: list[Asset], build_id: int, blocks: int) -
     where = f"mount 'M:{project.mount}'" if project.mount else "DECB disk, already mounted"
     eq = [_generated(project), "",
           f"; Image {os.path.basename(project.image)}  {where}",
-          f"{P}SDC_BUILD_ID      equ     ${build_id:08X}",
-          f"{P}SDC_IMAGE_BLOCKS  equ     ${blocks:06X}",
-          f"{P}SDC_ASSET_COUNT   equ     {len(assets)}",
-          f"{P}SDC_DESC_SIZE     equ     12", ""]
+          f"{P}DMPKG_BUILD_ID      equ     ${build_id:08X}",
+          f"{P}DMPKG_IMAGE_BLOCKS  equ     ${blocks:06X}",
+          f"{P}DMPKG_ASSET_COUNT   equ     {len(assets)}",
+          f"{P}DMPKG_DESC_SIZE     equ     12", ""]
     for i, a in enumerate(assets):
         n = P + a.name
         eq += [f"; {a.name}: {a.src} ({a.kind}{', aligned' if a.align else ''})",
@@ -48,9 +48,9 @@ def table(project: Project, assets: list[Asset], build_id: int) -> list[str]:
           "; Assemble alongside the equates file. Descriptors are 12 bytes:",
           ";   +0 block(3) +3 offset(2) +5 length(3) +8 flags(1) +9 dest(3)",
           ";   flags: $80 phys (CoCo 3 MMU load)  $40 decb records",
-          *([f"{P}SDC_MountName", f"        fcn     'M:{mount}'"] if mount else
-            [f"{P}SDC_MountName   equ     0       ; no mount: the disk is already in SDC_DRIVE"]),
-          "", f"{P}SDC_BuildID     ; header build_id (bytes 8-11), checked by sdc_open"]
+          *([f"{P}DMPKG_MountName", f"        fcn     'M:{mount}'"] if mount else
+            [f"{P}DMPKG_MountName   equ     0       ; no mount: the disk is already in SDC_DRIVE"]),
+          "", f"{P}DMPKG_BuildID     ; header build_id (bytes 8-11), checked by sdc_open"]
     tb.append(f"        fqb     ${build_id:08X}")
     tb += ["", "; asset descriptors, in manifest order: ldx #NAME / jsr sdc_load"]
     lw = max(8, max(len(P + a.name) for a in assets) + 1)   # opcode column: 8, or past the longest name

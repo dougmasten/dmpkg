@@ -316,7 +316,7 @@ TEST_ASM = r"""
         bra     start
 done    bra     done                fixed at $1002 - harness stops here
 start
-        ldx     #SDC_MountName
+        ldx     #DMPKG_MountName
         ldy     #{hdr}
         jsr     sdc_open
         lbcs    fail
@@ -469,8 +469,8 @@ FAIL_ASM = r"""
         bra     start
 done    bra     done
 start
-        ldx     #SDC_MountName
-        ldy     #SDC_BuildID
+        ldx     #DMPKG_MountName
+        ldy     #DMPKG_BuildID
         jsr     sdc_open
         lbcs    fail
         ldx     #CODE               length word straddles blocks 1/2
@@ -632,7 +632,7 @@ def run_all(ex, src):
     chk(m.sdc.stream is None and not m.sdc.cmdmode, "  closed, back in emulation mode")
 
     # ---- run 1: full load, out of image order, on the mounted disk
-    prog, done = assemble(ex, build, "SDC_BuildID")
+    prog, done = assemble(ex, build, "DMPKG_BuildID")
     m = Machine(files_on_card, mounted="DEMO.DSK")
     c0 = m.cpu.cycles
     m.run(prog, 0x1000, done)
@@ -656,7 +656,7 @@ def run_all(ex, src):
     # ---- run 3: card hangs part way through TITLE (phys load): READY never
     # comes, so sdc_waitready times out. SDC_TIMEOUT=1 (65536 polls) keeps
     # the run short; the MMU window must be put back even on the error.
-    tprog, tdone = assemble(ex, build, "SDC_BuildID", defines=["SDC_TIMEOUT=1"])
+    tprog, tdone = assemble(ex, build, "DMPKG_BuildID", defines=["SDC_TIMEOUT=1"])
     m = Machine(files_on_card, mounted="DEMO.DSK")
     m.sdc.stall_block = A["TITLE"].block + 1
     c0 = m.cpu.cycles
@@ -704,7 +704,7 @@ def run_all(ex, src):
         and sres["build_id"] == res["build_id"],
         "stream image: same layout and build_id as the disk")
     chk(len(simg) == image.MIN_IMAGE and simg[5] == 0, "stream image: 162 blocks, no disk flag")
-    prog, done = assemble(ex, build, "SDC_BuildID")
+    prog, done = assemble(ex, build, "DMPKG_BuildID")
     m = Machine({"GAMES/DEMO.SDS": simg})
     m.run(prog, 0x1000, done)
     chk(m.peek(0x100, 1) == b"\0" and ("mount", "GAMES/DEMO.SDS") in m.sdc.log,
@@ -727,8 +727,8 @@ LAYOUT_ASM = r"""
         bra     start
 done    bra     done
 start
-        ldx     #SDC_MountName
-        ldy     #SDC_BuildID
+        ldx     #DMPKG_MountName
+        ldy     #DMPKG_BuildID
         jsr     sdc_open
         bcs     fail
         ldx     #GAPFILL

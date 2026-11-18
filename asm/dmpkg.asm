@@ -13,10 +13,10 @@
 ;              (e.g. $0124 for 124), or D = 0 if the firmware predates the
 ;              VERSION command (before 113). Also stored in sdc_ver.
 ;              Ends a running stream.
-;   sdc_open   X = mount name ("M:..." zero-terminated, e.g. SDC_MountName),
+;   sdc_open   X = mount name ("M:..." zero-terminated, e.g. DMPKG_MountName),
 ;                  or 0 to use the image already in SDC_DRIVE (a dmpkg disk
 ;                  image the loader was run from)
-;              Y = expected 4-byte build_id (SDC_BuildID) or 0 to skip the check
+;              Y = expected 4-byte build_id (DMPKG_BuildID) or 0 to skip the check
 ;              Checks a CoCo SDC is present and its firmware supports STREAM
 ;              (VERSION >= SDC_MINVER), mounts the image, starts a stream at
 ;              block 0 and checks the build_id so a stale image is caught.
@@ -240,9 +240,9 @@ sdc_version
 
 ;------------------------------------------------------------------------------
 ; Function    : sdc_open
-; Entry       : Reg X = mount name ("M:..." zero-terminated, e.g. SDC_MountName),
+; Entry       : Reg X = mount name ("M:..." zero-terminated, e.g. DMPKG_MountName),
 ;             :         or 0 to stream the image already in SDC_DRIVE
-;             :     Y = expected 4-byte build_id (SDC_BuildID), or 0 to skip it
+;             :     Y = expected 4-byte build_id (DMPKG_BuildID), or 0 to skip it
 ; Exit        : CC.C clear: image mounted, stream parked after the build_id
 ;             : CC.C set  : A = error code (stream stopped)
 ; Destroys    : A, CC

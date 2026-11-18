@@ -18,8 +18,8 @@ start
         orcc    #$50            ; mask IRQ/FIRQ: Disk BASIC's motor-off
                                 ; timer writes $FF40, which would drop the
                                 ; SDC out of command mode mid-stream
-        ldx     #SDC_MountName  ; 0: use the disk already in SDC_DRIVE
-        ldy     #SDC_BuildID
+        ldx     #DMPKG_MountName ; 0: use the disk already in SDC_DRIVE
+        ldy     #DMPKG_BuildID
         jsr     sdc_open
         bcs     @done
         ldx     #FONT           ; in image order, so most loads carry on

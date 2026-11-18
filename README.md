@@ -23,8 +23,8 @@ dmpkg list   example/build/DEMO.DSK
 `make build` runs the steps of a [two-pass build](docs/DISK.md#two-pass-build): `example/mkassets.py` writes the example's assets (random filler, fixed seed), `dmpkg build` writes the include files, lwasm assembles `example/loader.asm` against them, and a second `dmpkg build` puts the loader on the disk. The Makefile runs the package straight from `python/src/`, so it works without installing.
 
 ```asm
-        ldx     #SDC_MountName      ; from assettab.asm (0 on a disk image: no mount)
-        ldy     #SDC_BuildID        ; 0 to skip the stale-image check
+        ldx     #DMPKG_MountName    ; from assettab.asm (0 on a disk image: no mount)
+        ldy     #DMPKG_BuildID      ; 0 to skip the stale-image check
         jsr     sdc_open
         bcs     error               ; A = error code
         ldx     #TITLE              ; asset descriptor

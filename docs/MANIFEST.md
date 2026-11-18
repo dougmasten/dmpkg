@@ -75,7 +75,7 @@ Other top-level keys are ignored, so you can keep your own data (YAML anchors, n
 | `equates` | none | Path of the equates include (EQUs only). Optional, but programs need it. |
 | `table` | none | Path of the table include (mount name, build_id, descriptors). Optional, but programs need it. |
 | `map` | none | Path of a human-readable layout report. |
-| `prefix` | `""` | Text put in front of every generated symbol (`SDC_MountName`, `SDC_BuildID`, `SDC_BUILD_ID`, `FONT`, `FONT_BLK`…). Use it to keep two images' symbols apart in one program. |
+| `prefix` | `""` | Text put in front of every generated symbol (`DMPKG_MountName`, `DMPKG_BuildID`, `DMPKG_BUILD_ID`, `FONT`, `FONT_BLK`…). Use it to keep two images' symbols apart in one program. |
 | `min_size` | `0x14400` | The image is padded to at least this many bytes (rounded up to a whole 512-byte block). It can't be lower than `0x14400` (82,944 bytes), the smallest disk image the SDC's `M:` mount accepts according to the User Guide. A disk image is always at least 161,280 bytes anyway. |
 | `pad_byte` | `0`, or `0xFF` with `disk:` | Value for unused bytes: gaps between assets, the end of the last block, padding up to `min_size`. Only the low 8 bits are used. The TOC padding in block 0 is always `$00`. |
 | `disk` | `false` | `true`, `false`, or a mapping (below). Anything but `false` makes the image a 35-track DECB disk as well. `true` is the same as an empty mapping: a disk with no loader on it. |
@@ -152,12 +152,12 @@ and once per image:
 
 | symbol | file | meaning |
 |---|---|---|
-| `SDC_MountName` | table | mount string (`fcn 'M:…'`), or `equ 0` for a disk image with no `sdc_path` |
-| `SDC_BuildID` | table | the image's 4-byte build_id, for `sdc_open` to check |
-| `SDC_BUILD_ID` | equates | the same build_id as a number |
-| `SDC_IMAGE_BLOCKS` | equates | image size in 512-byte blocks |
-| `SDC_ASSET_COUNT` | equates | number of assets |
-| `SDC_DESC_SIZE` | equates | descriptor size (12) |
+| `DMPKG_MountName` | table | mount string (`fcn 'M:…'`), or `equ 0` for a disk image with no `sdc_path` |
+| `DMPKG_BuildID` | table | the image's 4-byte build_id, for `sdc_open` to check |
+| `DMPKG_BUILD_ID` | equates | the same build_id as a number |
+| `DMPKG_IMAGE_BLOCKS` | equates | image size in 512-byte blocks |
+| `DMPKG_ASSET_COUNT` | equates | number of assets |
+| `DMPKG_DESC_SIZE` | equates | descriptor size (12) |
 
 ## Mount name
 
@@ -167,7 +167,7 @@ Without `disk:`, the program mounts the image by name with `sdc_open`, so the im
 - every part is upper-cased; each folder name is at most 8 characters, and the file name is 8.3
 - `games/demo.sds` → `M:GAMES/DEMO.SDS`
 
-With `disk:` and no `sdc_path`, there's no mount name: `SDC_MountName` is 0, and `sdc_open` streams the disk already mounted in `SDC_DRIVE`, which is the one the loader was run from. Give `sdc_path` too if a program should mount the disk by name instead.
+With `disk:` and no `sdc_path`, there's no mount name: `DMPKG_MountName` is 0, and `sdc_open` streams the disk already mounted in `SDC_DRIVE`, which is the one the loader was run from. Give `sdc_path` too if a program should mount the disk by name instead.
 
 ## Checks
 

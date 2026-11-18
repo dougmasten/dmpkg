@@ -3,8 +3,8 @@
 The 6809 runtime a program assembles in to load assets from a dmpkg image through the CoCo SDC `STREAM` command. It's 963 bytes, plain 6809, and assembles unchanged with `--6309`. Include it with the two files `dmpkg build` writes (see [MANIFEST.md](MANIFEST.md#symbols) for the symbols they define):
 
 ```asm
-        ldx     #SDC_MountName      ; from assettab.asm (0 on a disk image: no mount)
-        ldy     #SDC_BuildID        ; 0 to skip the stale-image check
+        ldx     #DMPKG_MountName    ; from assettab.asm (0 on a disk image: no mount)
+        ldy     #DMPKG_BuildID      ; 0 to skip the stale-image check
         jsr     sdc_open
         bcs     error               ; A = error code
         ldx     #TITLE              ; asset descriptor
@@ -42,7 +42,7 @@ Every call returns carry clear on success. On failure it returns carry set and t
 | 1 | `SDC_ENODEV` | `sdc_init`, `sdc_open` | no CoCo SDC answered the presence check | no SDC plugged in, or the Multi-Pak switch is on another slot. Nothing was sent to the controller |
 | 2 | `SDC_EVER` | `sdc_open` | firmware is older than `SDC_MINVER` (117, the first with STREAM) | update the SDC firmware. `sdc_ver` holds the version it found (BCD), or 0 if the firmware predates the VERSION command (before 113) |
 | 3 | `SDC_EMOUNT` | `sdc_open` | the SDC couldn't mount the image (FAILED set after the name was sent) | the file isn't on the card at `sdc_path`, or the path or name is wrong. Check that the card has `GAMES/DEMO.SDS` (or your path) |
-| 4 | `SDC_EHDR` | `sdc_open` | the image's `build_id` doesn't match `SDC_BuildID` | stale image: the card and the program come from different builds. Copy the current image to the card, or reassemble against it |
+| 4 | `SDC_EHDR` | `sdc_open` | the image's `build_id` doesn't match `DMPKG_BuildID` | stale image: the card and the program come from different builds. Copy the current image to the card, or reassemble against it |
 | 5 | `SDC_EEOF` | `sdc_open`, `sdc_load`, `sdc_getbyte` | BUSY dropped while waiting for READY: the stream reached end of file before the data | the image is truncated or isn't the one the descriptors were built for. Usually only seen with `Y = 0`, where the stale-image check is skipped |
 | 6 | `SDC_ETIME` | any call | BUSY or READY didn't change within `SDC_TIMEOUT` × 65536 polls | no SDC answering (missing, or wrong Multi-Pak slot), or a stuck controller. Raise `SDC_TIMEOUT` only if a slow card really needs it |
 | 7 | `SDC_EFAIL` | `sdc_open`, `sdc_load`, `sdc_getbyte` | the controller reported an error: FAILED (status bit 7) set, or the stream ended (BUSY cleared) with status `$08` instead of `$00`. The firmware ends a failed stream with `$08` and doesn't set FAILED, contrary to the User Guide | SD card read error, card removed, or the controller rejected the command |

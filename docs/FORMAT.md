@@ -39,7 +39,7 @@ block toc_blocks .. asset data, placed first-fit in manifest order
 | 15 | 1 | toc_blocks | blocks used by header + TOC (1–255); first data block |
 | 16 | 16 | name | project name, ASCII, space-padded, not terminated |
 
-`sdc_open` compares `build_id` (bytes 8–11) against `SDC_BuildID` from the generated `assettab.asm`, so a program built against a different image fails with error 4. The other header fields aren't checked: the TOC, and through its CRCs the data, are already covered by `build_id`.
+`sdc_open` compares `build_id` (bytes 8–11) against `DMPKG_BuildID` from the generated `assettab.asm`, so a program built against a different image fails with error 4. The other header fields aren't checked: the TOC, and through its CRCs the data, are already covered by `build_id`.
 
 ## TOC entry (16 bytes)
 
@@ -90,9 +90,9 @@ All CRCs are standard CRC-32 (IEEE 802.3, reflected, init/xorout `$FFFFFFFF`; Py
 
 ## Mount name (not stored in the image)
 
-The runtime mounts the image with the string in `SDC_MountName`: `M:` followed by the `sdc_path`, upper-cased and NUL-terminated. Each part of the path must be an 8.3 name, separated by `/`. Example: `games/demo.sds` → `M:GAMES/DEMO.SDS`.
+The runtime mounts the image with the string in `DMPKG_MountName`: `M:` followed by the `sdc_path`, upper-cased and NUL-terminated. Each part of the path must be an 8.3 name, separated by `/`. Example: `games/demo.sds` → `M:GAMES/DEMO.SDS`.
 
-A disk image with no `sdc_path` has no mount name: `SDC_MountName` is an `equ 0`, and `sdc_open` with X = 0 streams whatever is already mounted in `SDC_DRIVE`, which is the disk the loader was run from.
+A disk image with no `sdc_path` has no mount name: `DMPKG_MountName` is an `equ 0`, and `sdc_open` with X = 0 streams whatever is already mounted in `SDC_DRIVE`, which is the disk the loader was run from.
 
 ## DECB disk image
 

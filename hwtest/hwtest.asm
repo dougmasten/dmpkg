@@ -50,7 +50,7 @@ start
         ldx     #t_title
         jsr     text
         jsr     newrow
-        ldx     #SDC_BuildID    ; badid = the real build_id inverted
+        ldx     #DMPKG_BuildID  ; badid = the real build_id inverted
         ldy     #badid
         ldb     #4
 @inv    lda     ,x+
@@ -90,8 +90,8 @@ start
         jsr     want
         ldx     #t_badid
         jsr     cell
-        ldx     #SDC_MountName  ; 0: the disk in SDC_DRIVE
-        ldy     #SDC_BuildID
+        ldx     #DMPKG_MountName ; 0: the disk in SDC_DRIVE
+        ldy     #DMPKG_BuildID
         jsr     sdc_open
         jsr     got
         ldx     #t_open
@@ -160,8 +160,8 @@ start
 ;
 ; ---- mounting by name
 ;
-        ldx     #S_SDC_MountName
-        ldy     #S_SDC_BuildID
+        ldx     #S_DMPKG_MountName
+        ldy     #S_DMPKG_BuildID
         jsr     sdc_open
         jsr     got
         ldx     #t_mount
@@ -184,7 +184,7 @@ start
         ldx     #t_nofile
         jsr     cell
         ldx     #home           ; put the disk back in drive 0
-        ldy     #SDC_BuildID
+        ldy     #DMPKG_BuildID
         jsr     sdc_open
         jsr     got
         ldx     #t_home
