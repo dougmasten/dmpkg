@@ -1,0 +1,16 @@
+# Hardware test: a bare stream image, mounted by name (M:HWTEST.SDS) from the
+# current SDC directory. Its symbols have an S_ prefix so the disk loaders can
+# include them next to their own. See docs/HWTEST.md.
+
+project:
+  name: HWTEST stream
+  image: build/HWTEST.SDS
+  sdc_path: HWTEST.SDS
+  prefix: S_
+  equates: build/stream.inc
+  table: build/streamtab.asm
+  map: build/HWTEST.SDS.map
+
+assets:
+  - {name: data,  file: assets/s_data.bin,  load: 0x3000}
+  - {name: align, file: assets/s_align.bin, load: 0x3400, align: true}

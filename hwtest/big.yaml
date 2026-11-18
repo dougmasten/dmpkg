@@ -1,0 +1,25 @@
+# Hardware test: the same assets plus fillers that push TAIL past track 34:
+# GAP takes the space left before track 17 except 3 granules (HWBIG.BIN and
+# AUTOEXEC.BAS), FILL the rest of the disk. The disk is padded to 737,792
+# bytes, the size the SDC takes for a hard disk image. HWBIG.BIN runs the
+# same checks as HWTEST.BIN, plus TAIL. See docs/HWTEST.md.
+
+project:
+  name: HWBIG
+  image: build/HWBIG.DSK
+  equates: build/big/assets.inc
+  table: build/big/assettab.asm
+  map: build/HWBIG.map
+  disk:
+    loader: build/HWBIG.BIN
+
+assets:
+  - {name: a_odd,   file: assets/a_odd.bin,   load: 0x3000}
+  - {name: b_pack,  file: assets/b_pack.bin,  load: 0x3301}
+  - {name: c_multi, file: assets/c_multi.bin, load: 0x3500}
+  - {name: d_align, file: assets/d_align.bin, load: 0x3B00, align: true}
+  - {name: e_code,  file: assets/e_code.bin,  type: decb}
+  - {name: f_phys,  file: assets/f_phys.bin,  phys: 0x60001}
+  - {name: gap,     file: assets/gap.bin,     phys: 0x100000}  # never loaded
+  - {name: fill,    file: assets/fill.bin,    phys: 0x140000}  # never loaded
+  - {name: tail,    file: assets/tail.bin,    load: 0x3000}    # past track 34

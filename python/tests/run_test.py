@@ -540,6 +540,7 @@ def main():
         ok &= init_test()
         ok &= output_dirs_test()
         ok &= decb_word_fail_test()
+    ok &= hwtest_test()
     print("ALL PASS" if ok else "SOME FAILED")
     return 0 if ok else 1
 
@@ -816,6 +817,65 @@ def disk_layout_test():
             full = str(e)
         results.append(check(full and full.startswith("disk full"),
                              f"no granule left for the loader -> {full!r}"))
+    return all(results)
+
+
+def screen(m):
+    """The 32x16 text screen as 16 strings; inverse characters lower-cased."""
+    rows = []
+    for r in range(16):
+        line = ""
+        for c in m.peek(0x0400 + 32 * r, 32):
+            ch = chr(c & 0x3F if c & 0x20 else (c & 0x3F) | 0x40)
+            line += ch if c & 0x40 else ch.lower()
+        rows.append(line.rstrip())
+    return [r for r in rows if r]
+
+
+def hwtest_test():
+    """The hardware test loaders (make hwtest), run here first: on a CoCo 2
+    and a CoCo 3, then with a corrupted asset and with HWTEST.SDS missing."""
+    hb = os.path.join(ROOT, "hwtest", "build")
+    names = ("HWTEST.DSK", "HWBIG.DSK", "HWTEST.SDS")
+    if not all(os.path.isfile(os.path.join(hb, n)) for n in names):
+        return check(False, "hwtest: images not built (make hwtest)")
+    card = {n: read(os.path.join(hb, n)) for n in names}
+    results = []
+
+    def run(disk, coco3, files=None):
+        img = (files or card)[disk]
+        segs, exe = decb.parse_loadm(disk_files(img)[disk.replace("DSK", "BIN")][2], disk)
+        m = Machine(dict(files or card), mounted=disk)
+        m.mem.load(0xFFFE, b"\x8c\x1b" if coco3 else b"\xa0\x27")
+        fails = m.call(segs, exe)
+        return fails, screen(m), m
+
+    for disk in ("HWTEST.DSK", "HWBIG.DSK"):
+        for coco3 in (False, True):
+            fails, text, m = run(disk, coco3)
+            what = f"hwtest {disk} on a CoCo {3 if coco3 else 2}"
+            cells = " ".join(text)
+            results.append(check(fails == 0 and text[-1] == "ALL PASSED"
+                                 and "SDC FW     1.27" in cells
+                                 and ("F_PHYS     OK" if coco3 else "F_PHYS     SKIP") in cells
+                                 and ("TAIL       OK" in cells) == (disk == "HWBIG.DSK")
+                                 and m.sdc.mounted == disk,
+                                 f"{what}: all passed, disk remounted"))
+    bad = dict(card)
+    img = bytearray(card["HWTEST.DSK"])
+    img[3 * 512 + 43 + 700] ^= 0xFF                 # a byte in the middle of C_MULTI
+    bad["HWTEST.DSK"] = bytes(img)
+    fails, text, _ = run("HWTEST.DSK", False, bad)
+    results.append(check(fails == 1 and "C_MULTI    bad" in " ".join(text)
+                         and text[-1] == "1 FAILED",
+                         "hwtest: a corrupted byte shows C_MULTI BAD (inverse), 1 failed"))
+    nosds = {k: v for k, v in card.items() if k != "HWTEST.SDS"}
+    fails, text, m = run("HWTEST.DSK", False, nosds)
+    results.append(check(fails == 1 and "MOUNT SDS  e3" in " ".join(text)
+                         and m.sdc.mounted == "HWTEST.DSK",
+                         "hwtest: HWTEST.SDS missing shows MOUNT SDS E3, disk still remounted"))
+    if not all(results):
+        print("\n".join("    |" + r for r in text))
     return all(results)
 
 

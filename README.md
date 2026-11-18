@@ -54,6 +54,7 @@ python/         the packer, a Python project of its own
   tests/        end-to-end test of the packer and runtime (run_test.py)
 asm/            the 6809 runtime (dmpkg.asm)
 example/        example project, asset generator and loader
+hwtest/         test disks for a real CoCo SDC (make hwtest)
 docs/           the documentation (below)
 Makefile        builds the example and runs the tests across both parts
 ```
@@ -68,6 +69,7 @@ Makefile        builds the example and runs the tests across both parts
 | [docs/FORMAT.md](docs/FORMAT.md) | the image format, byte by byte, with a worked example |
 | [docs/SDC_FIRMWARE.md](docs/SDC_FIRMWARE.md) | CoCo SDC firmware and SDC-DOS versions: what each added, and what dmpkg needs |
 | [docs/TESTING.md](docs/TESTING.md) | the test suite, and what hasn't been tried on real hardware |
+| [docs/HWTEST.md](docs/HWTEST.md) | the hardware test: test disks to run on a real CoCo SDC |
 
 ```sh
 make test                       # build + verify the example, assemble the runtime, run the test

@@ -10,9 +10,11 @@ make test TEST_SEED=1234        # repeat a run with the seed it printed
 make test LWASM=/path/to/lwasm  # if lwasm isn't on PATH
 ```
 
-Other targets: `make build`, `make verify`, `make list`, `make asm` (assembles the runtime for 6809, 6309 and `SDC_NOVERCHK` at `ASM_ORG`, default `0x2000`, and prints its size), `make clean`. `make build` generates the example assets itself.
+Other targets: `make hwtest` (the [hardware test](HWTEST.md) disks; `make test` builds them and runs their loaders against the model), `make build`, `make verify`, `make list`, `make asm` (assembles the runtime for 6809, 6309 and `SDC_NOVERCHK` at `ASM_ORG`, default `0x2000`, and prints its size), `make clean`. `make build` generates the example assets itself.
 
 ## Not yet verified on hardware
+
+[HWTEST.md](HWTEST.md) has test disks that check most of these on a real SDC.
 
 - The protocol comes from the CoCo SDC guide (as quoted in nowhereman999's `SDC_Stream_File_Library.asm` and VCC's stream emulation). The tests run against a model of the SDC, not a real one. You need STREAM-capable firmware (117 or later). `sdc_open` checks this.
 - Drive 1 (`SDC_DRIVE equ 1` → `$E1`/`$91`) follows the command-bit pattern but hasn't been confirmed.
