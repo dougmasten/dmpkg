@@ -107,7 +107,7 @@ Each entry is a mapping:
 | `align` | `false` | Start the asset on a fresh 512-byte block (offset 0). |
 
 - **Raw assets** need exactly one of `load` or `phys`, and can't be empty.
-- **DECB assets** take neither: each segment loads to the address in the file. The file must be a well-formed LOADM file (`$00` segment records, then a `$FF` postamble with the exec address). It's stored re-encoded as the records `sdc_load` follows, and `sdc_load` returns the exec address in U. Empty segments are dropped.
+- **DECB assets** take neither: each segment loads to the address in the file. The file must be a well-formed LOADM file (`$00` segment records, then a `$FF` postamble with the exec address). It's stored re-encoded as the records `dmpkg_load` follows, and `dmpkg_load` returns the exec address in U. Empty segments are dropped.
 - **Size:** an asset's stored size must be under 16MB.
 
 ### Layout
@@ -140,7 +140,7 @@ For each asset, the include files define (with `prefix` in front):
 
 | symbol | file | meaning |
 |---|---|---|
-| `NAME` | table | 12-byte descriptor, passed in X to `sdc_load` |
+| `NAME` | table | 12-byte descriptor, passed in X to `dmpkg_load` |
 | `NAME_IDX` | equates | index in the manifest (0 = first) |
 | `NAME_BLK` | equates | block where the data starts |
 | `NAME_OFF` | equates | byte offset in that block |
@@ -153,7 +153,7 @@ and once per image:
 | symbol | file | meaning |
 |---|---|---|
 | `DMPKG_MountName` | table | mount string (`fcn 'M:…'`), or `equ 0` for a disk image with no `sdc_path` |
-| `DMPKG_BuildID` | table | the image's 4-byte build_id, for `sdc_open` to check |
+| `DMPKG_BuildID` | table | the image's 4-byte build_id, for `dmpkg_open` to check |
 | `DMPKG_BUILD_ID` | equates | the same build_id as a number |
 | `DMPKG_IMAGE_BLOCKS` | equates | image size in 512-byte blocks |
 | `DMPKG_ASSET_COUNT` | equates | number of assets |
@@ -161,13 +161,13 @@ and once per image:
 
 ## Mount name
 
-Without `disk:`, the program mounts the image by name with `sdc_open`, so the image must be on the card at `sdc_path`. The mount name is `M:` plus the path:
+Without `disk:`, the program mounts the image by name with `dmpkg_open`, so the image must be on the card at `sdc_path`. The mount name is `M:` plus the path:
 
 - `\` becomes `/`, and leading or trailing `/` are dropped
 - every part is upper-cased; each folder name is at most 8 characters, and the file name is 8.3
 - `games/demo.sds` → `M:GAMES/DEMO.SDS`
 
-With `disk:` and no `sdc_path`, there's no mount name: `DMPKG_MountName` is 0, and `sdc_open` streams the disk already mounted in `SDC_DRIVE`, which is the one the loader was run from. Give `sdc_path` too if a program should mount the disk by name instead.
+With `disk:` and no `sdc_path`, there's no mount name: `DMPKG_MountName` is 0, and `dmpkg_open` streams the disk already mounted in `DMPKG_DRIVE`, which is the one the loader was run from. Give `sdc_path` too if a program should mount the disk by name instead.
 
 ## Checks
 

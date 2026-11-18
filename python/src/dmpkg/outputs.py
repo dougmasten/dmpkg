@@ -49,10 +49,10 @@ def table(project: Project, assets: list[Asset], build_id: int) -> list[str]:
           ";   +0 block(3) +3 offset(2) +5 length(3) +8 flags(1) +9 dest(3)",
           ";   flags: $80 phys (CoCo 3 MMU load)  $40 decb records",
           *([f"{P}DMPKG_MountName", f"        fcn     'M:{mount}'"] if mount else
-            [f"{P}DMPKG_MountName   equ     0       ; no mount: the disk is already in SDC_DRIVE"]),
-          "", f"{P}DMPKG_BuildID     ; header build_id (bytes 8-11), checked by sdc_open"]
+            [f"{P}DMPKG_MountName   equ     0       ; no mount: the disk is already in DMPKG_DRIVE"]),
+          "", f"{P}DMPKG_BuildID     ; header build_id (bytes 8-11), checked by dmpkg_open"]
     tb.append(f"        fqb     ${build_id:08X}")
-    tb += ["", "; asset descriptors, in manifest order: ldx #NAME / jsr sdc_load"]
+    tb += ["", "; asset descriptors, in manifest order: ldx #NAME / jsr dmpkg_load"]
     lw = max(8, max(len(P + a.name) for a in assets) + 1)   # opcode column: 8, or past the longest name
     for a in assets:
         tb.append(f"{P + a.name:<{lw}}fcb     " + ",".join(f"${b:02X}" for b in a.descriptor()))

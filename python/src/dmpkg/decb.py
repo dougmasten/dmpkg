@@ -1,6 +1,6 @@
 """
 Disk Extended Color BASIC: LOADM files (parsing them and re-encoding them as
-the records sdc_load follows), 8.3 file names, and the 35-track disk a disk
+the records dmpkg_load follows), 8.3 file names, and the 35-track disk a disk
 image doubles as (writing its FAT and directory, and reading them back).
 """
 from __future__ import annotations
@@ -58,7 +58,7 @@ def parse_loadm(raw: bytes, src: str):
 
 
 def records(segs, exe) -> bytes:
-    """Stored form: [len.w addr.w data]... [0000 exec.w] - read by sdc_load."""
+    """Stored form: [len.w addr.w data]... [0000 exec.w] - read by dmpkg_load."""
     out = bytearray()
     for addr, data in segs:
         if len(data) > 0xFFFF:

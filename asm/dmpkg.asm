@@ -6,42 +6,43 @@
 ; (mount name, build_id, 12-byte asset descriptors).
 ;
 ; Entry points
-;   sdc_init   Checks a CoCo SDC is present (SDC_ENODEV if not), then gets
-;              its firmware version like sdc_version. sdc_open calls it.
-;   sdc_version
-;              Enters command mode, returns D = firmware version in BCD
-;              (e.g. $0124 for 124), or D = 0 if the firmware predates the
-;              VERSION command (before 113). Also stored in sdc_ver.
-;              Ends a running stream.
-;   sdc_open   X = mount name ("M:..." zero-terminated, e.g. DMPKG_MountName),
-;                  or 0 to use the image already in SDC_DRIVE (a dmpkg disk
-;                  image the loader was run from)
-;              Y = expected 4-byte build_id (DMPKG_BuildID) or 0 to skip the check
-;              Checks a CoCo SDC is present and its firmware supports STREAM
-;              (VERSION >= SDC_MINVER), mounts the image, starts a stream at
-;              block 0 and checks the build_id so a stale image is caught.
-;   sdc_stop   ends a running stream ($D0), stays in command mode
-;   sdc_close  sdc_stop, then puts the controller back in floppy
-;              emulation mode (write 0 to $FF40)
-;   sdc_load   X = asset descriptor
-;              Loads the asset to its destination. If the stream is already
-;              positioned at the asset (packed assets loaded in image
-;              order) it carries on without restarting the stream.
-;              decb assets: returns exec address in U.
-;   sdc_getbyte
-;              Returns the next stream byte in A.
+;   dmpkg_init   Checks a CoCo SDC is present (DMPKG_ENODEV if not), then gets
+;                its firmware version like dmpkg_version. dmpkg_open calls it.
+;   dmpkg_version
+;                Enters command mode, returns D = firmware version in BCD
+;                (e.g. $0124 for 124), or D = 0 if the firmware predates the
+;                VERSION command (before 113). Also stored in dmpkg_ver.
+;                Ends a running stream.
+;   dmpkg_open   X = mount name ("M:..." zero-terminated, e.g. DMPKG_MountName),
+;                    or 0 to use the image already in DMPKG_DRIVE (a dmpkg disk
+;                    image the loader was run from)
+;                Y = expected 4-byte build_id (DMPKG_BuildID) or 0 to skip
+;                    the check
+;                Checks a CoCo SDC is present and its firmware supports STREAM
+;                (VERSION >= DMPKG_MINVER), mounts the image, starts a stream at
+;                block 0 and checks the build_id so a stale image is caught.
+;   dmpkg_stop   ends a running stream ($D0), stays in command mode
+;   dmpkg_close  dmpkg_stop, then puts the controller back in floppy
+;                emulation mode (write 0 to $FF40)
+;   dmpkg_load   X = asset descriptor
+;                Loads the asset to its destination. If the stream is already
+;                positioned at the asset (packed assets loaded in image
+;                order) it carries on without restarting the stream.
+;                decb assets: returns exec address in U.
+;   dmpkg_getbyte
+;                Returns the next stream byte in A.
 ;
 ; All return carry clear on success, or carry set and A = error code:
-;   SDC_ENODEV  1  no CoCo SDC found
-;   SDC_EVER    2  firmware too old for STREAM (sdc_ver holds its version)
-;   SDC_EMOUNT  3  mount failed (status bit 7 after $E0)
-;   SDC_EHDR    4  build_id in block 0 doesn't match (stale or wrong image)
-;   SDC_EEOF    5  stream ended (BUSY dropped) before the data was read
-;   SDC_ETIME   6  controller didn't answer in time
-;   SDC_EFAIL   7  controller reported an error (FAILED, or the stream ended
-;                  with status $08: card error)
+;   DMPKG_ENODEV  1  no CoCo SDC found
+;   DMPKG_EVER    2  firmware too old for STREAM (dmpkg_ver holds its version)
+;   DMPKG_EMOUNT  3  mount failed (status bit 7 after $E0)
+;   DMPKG_EHDR    4  build_id in block 0 doesn't match (stale or wrong image)
+;   DMPKG_EEOF    5  stream ended (BUSY dropped) before the data was read
+;   DMPKG_ETIME   6  controller didn't answer in time
+;   DMPKG_EFAIL   7  controller reported an error (FAILED, or the stream ended
+;                    with status $08: card error)
 ; On any error the stream is stopped. Registers other than A/CC are
-; preserved, except B for sdc_init and sdc_version (they return D) and U
+; preserved, except B for dmpkg_init and dmpkg_version (they return D) and U
 ; for decb loads (exec address).
 ;
 ; Protocol (CoCo SDC user guide ch. 7, firmware with STREAM support):
@@ -54,74 +55,74 @@
 ;   READY polled again before each following block. $D0 aborts.
 ;
 ; Configuration - define any of these before including to override:
-;   SDC_DRIVE    0      SDC drive slot used for the image (0 or 1)
-;   SDC_WINDOW   $4000  logical 8K window for phys (CoCo 3) loads, 8K-aligned,
-;                       $2000-$C000
-;   SDC_MMUREG          MMU register that maps SDC_WINDOW; default is the
-;                       task 0 one, $FFA0+SDC_WINDOW/$2000 ($FFA2 for $4000).
-;                       Define it for task 1 ($FFA8+...); it must be $FFA0-$FFAF
-;                       and map the same 8K slot as SDC_WINDOW
-;   SDC_MMU_HOME        if defined, block restored into SDC_MMUREG after a
-;                       phys load; otherwise the value read back before
-;                       the load is restored
-;   SDC_DELAY    12     settle loop before polling READY (8 cyc/pass: ~54us at
-;                       1.79MHz; the SDC needs ~20us to update READY; 1-65535)
-;   SDC_TIMEOUT  16     poll timeout, units of 65536 polls (1-255)
-;   SDC_MINVER   $0117  lowest firmware sdc_open accepts (117 added STREAM)
-;   SDC_NOVERCHK        if defined, sdc_open skips the version check
+;   DMPKG_DRIVE    0      SDC drive slot used for the image (0 or 1)
+;   DMPKG_WINDOW   $4000  logical 8K window for phys (CoCo 3) loads, 8K-aligned,
+;                         $2000-$C000
+;   DMPKG_MMUREG          MMU register that maps DMPKG_WINDOW; default is the
+;                         task 0 one, $FFA0+DMPKG_WINDOW/$2000 ($FFA2 for $4000).
+;                         Define it for task 1 ($FFA8+...); it must be $FFA0-$FFAF
+;                         and map the same 8K slot as DMPKG_WINDOW
+;   DMPKG_MMU_HOME        if defined, block restored into DMPKG_MMUREG after a
+;                         phys load; otherwise the value read back before
+;                         the load is restored
+;   DMPKG_DELAY    12     settle loop before polling READY (8 cyc/pass: ~54us at
+;                         1.79MHz; the SDC needs ~20us to update READY; 1-65535)
+;   DMPKG_TIMEOUT  16     poll timeout, units of 65536 polls (1-255)
+;   DMPKG_MINVER   $0117  lowest firmware dmpkg_open accepts (117 added STREAM)
+;   DMPKG_NOVERCHK        if defined, dmpkg_open skips the version check
 ;------------------------------------------------------------------------------
 
-        ifndef  SDC_DRIVE
-SDC_DRIVE       equ     0
+        ifndef  DMPKG_DRIVE
+DMPKG_DRIVE     equ     0
         endc
-        if      SDC_DRIVE&$FFFE         ; added to the $E0/$90 command codes
-        error   "SDC_DRIVE must be 0 or 1"
+        if      DMPKG_DRIVE&$FFFE       ; added to the $E0/$90 command codes
+        error   "DMPKG_DRIVE must be 0 or 1"
         endc
-        ifndef  SDC_WINDOW
-SDC_WINDOW      equ     $4000
+        ifndef  DMPKG_WINDOW
+DMPKG_WINDOW    equ     $4000
         endc
-        if      SDC_WINDOW&$1FFF
-        error   "SDC_WINDOW must be 8K-aligned"
+        if      DMPKG_WINDOW&$1FFF
+        error   "DMPKG_WINDOW must be 8K-aligned"
         endc
-        if      SDC_WINDOW<$2000        ; code tests the window's high byte
-        error   "SDC_WINDOW must be $2000-$C000"
+        if      DMPKG_WINDOW<$2000      ; code tests the window's high byte
+        error   "DMPKG_WINDOW must be $2000-$C000"
         endc
-        if      SDC_WINDOW>$C000        ; $E000 block holds I/O and vectors
-        error   "SDC_WINDOW must be $2000-$C000"
+        if      DMPKG_WINDOW>$C000      ; $E000 block holds I/O and vectors
+        error   "DMPKG_WINDOW must be $2000-$C000"
         endc
-SDC_WEND        equ     SDC_WINDOW+$2000        ; end of the window
-        ifndef  SDC_MMUREG
-SDC_MMUREG      equ     $FFA0+SDC_WINDOW/$2000  ; task 0 register for the window
+DMPKG_WEND      equ     DMPKG_WINDOW+$2000      ; end of the window
+        ifndef  DMPKG_MMUREG
+DMPKG_MMUREG    equ     $FFA0+DMPKG_WINDOW/$2000  ; task 0 register for the window
         endc
-        if      SDC_MMUREG<$FFA0
-        error   "SDC_MMUREG must be an MMU register, $FFA0-$FFAF"
+        if      DMPKG_MMUREG<$FFA0
+        error   "DMPKG_MMUREG must be an MMU register, $FFA0-$FFAF"
         endc
-        if      SDC_MMUREG>$FFAF
-        error   "SDC_MMUREG must be an MMU register, $FFA0-$FFAF"
+        if      DMPKG_MMUREG>$FFAF
+        error   "DMPKG_MMUREG must be an MMU register, $FFA0-$FFAF"
         endc
-        if      (SDC_MMUREG&7)-(SDC_WINDOW/$2000)
-        error   "SDC_MMUREG doesn't map SDC_WINDOW"
+        if      (DMPKG_MMUREG&7)-(DMPKG_WINDOW/$2000)
+        error   "DMPKG_MMUREG doesn't map DMPKG_WINDOW"
         endc
-        ifndef  SDC_DELAY
-SDC_DELAY       equ     12
+        ifndef  DMPKG_DELAY
+DMPKG_DELAY     equ     12
         endc
-        if      SDC_DELAY<1             ; X counts down: 0 would be 65536 passes
-        error   "SDC_DELAY must be 1-65535"
+        if      DMPKG_DELAY<1           ; X counts down: 0 would be 65536 passes
+        error   "DMPKG_DELAY must be 1-65535"
         endc
-        if      SDC_DELAY>$FFFF
-        error   "SDC_DELAY must be 1-65535"
+        if      DMPKG_DELAY>$FFFF
+        error   "DMPKG_DELAY must be 1-65535"
         endc
-        ifndef  SDC_TIMEOUT
-SDC_TIMEOUT     equ     16
+        ifndef  DMPKG_TIMEOUT
+DMPKG_TIMEOUT   equ     16
         endc
-        if      SDC_TIMEOUT<1           ; A counts down: 0 would be 256
-        error   "SDC_TIMEOUT must be 1-255"
+        if      DMPKG_TIMEOUT<1         ; A counts down: 0 would be 256
+        error   "DMPKG_TIMEOUT must be 1-255"
         endc
-        if      SDC_TIMEOUT>255
-        error   "SDC_TIMEOUT must be 1-255"
+        if      DMPKG_TIMEOUT>255
+        error   "DMPKG_TIMEOUT must be 1-255"
         endc
-        ifndef  SDC_MINVER
-SDC_MINVER      equ     $0117
+        ifndef  DMPKG_MINVER
+DMPKG_MINVER    equ     $0117
         endc
 
 SDC_LATCH       equ     $FF40           ; control latch (write)
@@ -132,8 +133,8 @@ SDC_P1          equ     $FF49           ; parameter 1 / block high byte
 SDC_DATA        equ     $FF4A           ; parameter 2/3, data port ($FF4A,$FF4B)
 
 SDC_CMDMODE     equ     $43
-SDC_C_MOUNT     equ     $E0+SDC_DRIVE
-SDC_C_STREAM    equ     $90+SDC_DRIVE
+SDC_C_MOUNT     equ     $E0+DMPKG_DRIVE
+SDC_C_STREAM    equ     $90+DMPKG_DRIVE
 SDC_C_ABORT     equ     $D0
 SDC_C_QUERY     equ     $C0
 
@@ -142,139 +143,139 @@ SDC_READY       equ     %00000010
 SDC_ERROR       equ     %00001000       ; set when a stream ends on an error
 
 ; error codes, returned in A with carry set
-SDC_ENODEV      equ     1               ; no CoCo SDC found
-SDC_EVER        equ     2               ; firmware older than SDC_MINVER
-SDC_EMOUNT      equ     3               ; mount failed (file not found?)
-SDC_EHDR        equ     4               ; build_id mismatch: stale image
-SDC_EEOF        equ     5               ; stream ended before the data
-SDC_ETIME       equ     6               ; controller didn't answer in time
-SDC_EFAIL       equ     7               ; controller reported an error
+DMPKG_ENODEV    equ     1               ; no CoCo SDC found
+DMPKG_EVER      equ     2               ; firmware older than DMPKG_MINVER
+DMPKG_EMOUNT    equ     3               ; mount failed (file not found?)
+DMPKG_EHDR      equ     4               ; build_id mismatch: stale image
+DMPKG_EEOF      equ     5               ; stream ended before the data
+DMPKG_ETIME     equ     6               ; controller didn't answer in time
+DMPKG_EFAIL     equ     7               ; controller reported an error
 
-; asset descriptor flags (sdc_desc.flags)
-SDC_F_PHYS      equ     $80             ; dest is a CoCo 3 physical address
-SDC_F_DECB      equ     $40             ; data is DECB records (exec in U)
+; asset descriptor flags (dmpkg_desc.flags)
+DMPKG_F_PHYS    equ     $80             ; dest is a CoCo 3 physical address
+DMPKG_F_DECB    equ     $40             ; data is DECB records (exec in U)
 
 ; asset descriptor (12 bytes, as dmpkg generates them in the table)
-sdc_desc        struct
+dmpkg_desc      struct
 blk             rmb     3               ; block where the data starts
 off             rmb     2               ; byte offset in that block (0-511)
 len             rmb     3               ; stored length
-flags           rmb     1               ; SDC_F_PHYS, SDC_F_DECB
+flags           rmb     1               ; DMPKG_F_PHYS, DMPKG_F_DECB
 dest            rmb     3               ; CPU or physical address
                 endstruct
 
 ;------------------------------------------------------------------------------
 ; state
-sdc_blk         rmb     3       ; block holding the next stream byte
-sdc_off         rmb     2       ; offset of the next byte in that block
-sdc_live        fcb     0       ; nonzero while a stream is running
-sdc_poll        rmb     1       ; nonzero: wait READY before the next byte
-sdc_left        rmb     3       ; bytes still to copy (24-bit)
-sdc_chunk       rmb     2       ; bytes in the current copy chunk
-sdc_n           rmb     1       ; 32-byte groups left in the chunk
-sdc_phys        fcb     0       ; nonzero only during a phys copy
-sdc_mblk        rmb     1       ; block mapped in the window
-sdc_msave       rmb     1       ; window block before the load
-sdc_tmo         rmb     1       ; timeout outer counter
-sdc_ver         fdb     0       ; firmware version (BCD), set by sdc_version
+dmpkg_blk       rmb     3       ; block holding the next stream byte
+dmpkg_off       rmb     2       ; offset of the next byte in that block
+dmpkg_live      fcb     0       ; nonzero while a stream is running
+dmpkg_poll      rmb     1       ; nonzero: wait READY before the next byte
+dmpkg_left      rmb     3       ; bytes still to copy (24-bit)
+dmpkg_chunk     rmb     2       ; bytes in the current copy chunk
+dmpkg_n         rmb     1       ; 32-byte groups left in the chunk
+dmpkg_phys      fcb     0       ; nonzero only during a phys copy
+dmpkg_mblk      rmb     1       ; block mapped in the window
+dmpkg_msave     rmb     1       ; window block before the load
+dmpkg_tmo       rmb     1       ; timeout outer counter
+dmpkg_ver       fdb     0       ; firmware version (BCD), set by dmpkg_version
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_init
+; Function    : dmpkg_init
 ; Entry       : none
 ; Exit        : CC.C clear: D = firmware version in BCD ($0124 = 124),
 ;             :             0 if the firmware predates VERSION (before 113)
-;             : CC.C set  : A = SDC_ENODEV or SDC_ETIME
+;             : CC.C set  : A = DMPKG_ENODEV or DMPKG_ETIME
 ; Destroys    : A, CC (B too when the SDC is found)
-; Calls       : sdc_version
+; Calls       : dmpkg_version
 ; Description : Checks a CoCo SDC is present, then gets its firmware version
-;             : (also kept in sdc_ver). The check writes the Flash data
+;             : (also kept in dmpkg_ver). The check writes the Flash data
 ;             : register ($FF42) and reads the Flash control register
 ;             : ($FF43), whose bits 5-6 follow it on an SDC; without one, it
-;             : returns SDC_ENODEV before any command is written. If found,
-;             : the controller is left in command mode (sdc_close leaves it).
+;             : returns DMPKG_ENODEV before any command is written. If found,
+;             : the controller is left in command mode (dmpkg_close leaves it).
 ;------------------------------------------------------------------------------
-sdc_init
+dmpkg_init
         lda     #$64                    ; Flash data: bits 5-6 set
         sta     SDC_FDATA
         lda     SDC_FCTL
         clr     SDC_FDATA               ; Flash data: bits 5-6 clear
         eora    SDC_FCTL                ; bits that followed the data
         cmpa    #$60
-        beq     sdc_version             ; found: get the firmware version
-        lda     #SDC_ENODEV             ; ERROR CODE: no CoCo SDC
+        beq     dmpkg_version           ; found: get the firmware version
+        lda     #DMPKG_ENODEV           ; ERROR CODE: no CoCo SDC
         orcc    #1                      ; set carry (error)
         rts
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_version
+; Function    : dmpkg_version
 ; Entry       : none
 ; Exit        : CC.C clear: D = firmware version in BCD ($0124 = 124),
 ;             :             0 if the firmware predates VERSION (before 113)
-;             : CC.C set  : A = SDC_ETIME
+;             : CC.C set  : A = DMPKG_ETIME
 ; Destroys    : A, B, CC
-; Calls       : sdc_stop, sdc_waitidle
+; Calls       : dmpkg_stop, dmpkg_waitidle
 ; Description : Ends any running stream, enters command mode and sends the
 ;             : VERSION command ($C0, 'V' in $FF49). The result is also kept
-;             : in sdc_ver.
+;             : in dmpkg_ver.
 ;------------------------------------------------------------------------------
-sdc_version
-        jsr     sdc_stop
+dmpkg_version
+        jsr     dmpkg_stop
         lda     #SDC_CMDMODE
         sta     SDC_LATCH
-        jsr     sdc_waitidle
+        jsr     dmpkg_waitidle
         bcs     @exit
         lda     #'V
         sta     SDC_P1
         lda     #SDC_C_QUERY
         sta     SDC_STAT
-        jsr     sdc_waitidle
+        jsr     dmpkg_waitidle
         bcs     @exit
         ldd     #0
         tst     SDC_STAT                ; FAILED: no VERSION command (< 113)
         bmi     @set_ver
         ldd     SDC_DATA
 @set_ver
-        std     sdc_ver
+        std     dmpkg_ver
         andcc   #$fe                    ; clear carry (success)
 @exit   rts
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_open
+; Function    : dmpkg_open
 ; Entry       : Reg X = mount name ("M:..." zero-terminated, e.g. DMPKG_MountName),
-;             :         or 0 to stream the image already in SDC_DRIVE
+;             :         or 0 to stream the image already in DMPKG_DRIVE
 ;             :     Y = expected 4-byte build_id (DMPKG_BuildID), or 0 to skip it
 ; Exit        : CC.C clear: image mounted, stream parked after the build_id
 ;             : CC.C set  : A = error code (stream stopped)
 ; Destroys    : A, CC
-; Calls       : sdc_init (sdc_stop with SDC_NOVERCHK), sdc_waitidle,
-;             : sdc_waitready, sdc_start, sdc_fail
+; Calls       : dmpkg_init (dmpkg_stop with DMPKG_NOVERCHK), dmpkg_waitidle,
+;             : dmpkg_waitready, dmpkg_start, dmpkg_fail
 ; Description : Checks a CoCo SDC is present and its firmware supports STREAM
-;             : (VERSION >= SDC_MINVER), mounts the image (unless X = 0),
+;             : (VERSION >= DMPKG_MINVER), mounts the image (unless X = 0),
 ;             : starts a stream at block 0 and compares the header's build_id
 ;             : (bytes 8-11) so a stale image is caught.
 ;------------------------------------------------------------------------------
-sdc_open
+dmpkg_open
         pshs    b,x,y,u
-        ifdef   SDC_NOVERCHK
-        jsr     sdc_stop
+        ifdef   DMPKG_NOVERCHK
+        jsr     dmpkg_stop
         lda     #SDC_CMDMODE
         sta     SDC_LATCH
-        jsr     sdc_waitidle
+        jsr     dmpkg_waitidle
         bcs     @err
         else
-        jsr     sdc_init                ; SDC present? stops any stream,
+        jsr     dmpkg_init              ; SDC present? stops any stream,
         bcs     @err                    ; enters command mode
-        cmpd    #SDC_MINVER
+        cmpd    #DMPKG_MINVER
         bhs     @ver_ok
-        lda     #SDC_EVER               ; ERROR CODE: firmware < 117
+        lda     #DMPKG_EVER             ; ERROR CODE: firmware < 117
         bra     @err
 @ver_ok
         endc
         leax    ,x                      ; X = 0: no mount, the image is
-        beq     @mount_ok               ; already in SDC_DRIVE
+        beq     @mount_ok               ; already in DMPKG_DRIVE
         lda     #SDC_C_MOUNT
         sta     SDC_STAT
-        jsr     sdc_waitready
+        jsr     dmpkg_waitready
         bcs     @err
         clra                            ; A counts 256 bytes, 2 per pass
 @name_loop
@@ -288,16 +289,16 @@ sdc_open
 @name_2 stb     SDC_DATA+1
         adda    #2
         bne     @name_loop
-        jsr     sdc_waitidle
+        jsr     dmpkg_waitidle
         bcs     @err
         lda     SDC_STAT
         bpl     @mount_ok
-        lda     #SDC_EMOUNT             ; ERROR CODE: file not found
+        lda     #DMPKG_EMOUNT           ; ERROR CODE: file not found
         bra     @err
 @mount_ok
         clra                            ; start stream at block 0
         ldu     #0
-        jsr     sdc_start
+        jsr     dmpkg_start
         bcs     @err
         ldy     3,s                     ; expected build_id pointer (saved Y)
         beq     @ok
@@ -312,95 +313,95 @@ sdc_open
         cmpd    2,y
         bne     @ehdr                   ; fail build_id check
         ldd     #12                     ; stream position after the build_id
-        std     sdc_off
+        std     dmpkg_off
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    b,x,y,u,pc
-@ehdr   lda     #SDC_EHDR               ; ERROR CODE: stale image
-@err    jsr     sdc_fail
+@ehdr   lda     #DMPKG_EHDR             ; ERROR CODE: stale image
+@err    jsr     dmpkg_fail
         puls    b,x,y,u,pc
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_stop
+; Function    : dmpkg_stop
 ; Entry       : none
 ; Exit        : CC.C clear
 ; Destroys    : CC
-; Calls       : sdc_waitidle
+; Calls       : dmpkg_waitidle
 ; Description : Aborts a running stream ($D0) and waits for the controller.
 ;             : Stays in command mode. Does nothing if no stream is running.
 ;------------------------------------------------------------------------------
-sdc_stop
+dmpkg_stop
         pshs    a
-        tst     sdc_live
+        tst     dmpkg_live
         beq     @exit
-        clr     sdc_live
+        clr     dmpkg_live
         lda     #SDC_C_ABORT
         sta     SDC_STAT
-        jsr     sdc_waitidle
+        jsr     dmpkg_waitidle
 @exit   andcc   #$fe                    ; clear carry (success)
         puls    a,pc
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_close
+; Function    : dmpkg_close
 ; Entry       : none
 ; Exit        : CC.C clear
 ; Destroys    : CC
-; Calls       : sdc_stop
+; Calls       : dmpkg_stop
 ; Description : Stops any stream, then returns the controller to floppy
 ;             : emulation mode (0 to $FF40).
 ;------------------------------------------------------------------------------
-sdc_close
-        bsr     sdc_stop
+dmpkg_close
+        bsr     dmpkg_stop
         clr     SDC_LATCH
         rts
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_fail
+; Function    : dmpkg_fail
 ; Entry       : Reg A = error code
 ; Exit        : CC.C set, A = error code
 ; Destroys    : CC
-; Calls       : sdc_stop
+; Calls       : dmpkg_stop
 ; Description : Common error exit: stops the stream and sets carry.
 ;------------------------------------------------------------------------------
-sdc_fail
-        bsr     sdc_stop                ; preserves A
+dmpkg_fail
+        bsr     dmpkg_stop              ; preserves A
         orcc    #1                      ; set carry (error)
         rts
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_load
+; Function    : dmpkg_load
 ; Entry       : Reg X = 12-byte asset descriptor
 ; Exit        : CC.C clear: asset loaded; decb assets: U = exec address
 ;             : CC.C set  : A = error code (stream stopped)
 ; Destroys    : A, CC (U for decb assets)
-; Calls       : sdc_start, sdc_copy, sdc_getword, sdc_fail
+; Calls       : dmpkg_start, dmpkg_copy, dmpkg_getword, dmpkg_fail
 ; Description : Loads the asset to its destination. If the stream is already
 ;             : parked at the asset (packed assets loaded in image order) it
 ;             : carries on; otherwise it restarts at the asset's block and drops
 ;             : the bytes before its offset. Phys assets go through the MMU
 ;             : window; decb assets follow their records.
 ;------------------------------------------------------------------------------
-sdc_load
+dmpkg_load
         pshs    b,x,y
-        tst     sdc_live                ; is the stream already parked here?
+        tst     dmpkg_live              ; is the stream already parked here?
         beq     @seek
-        ldd     sdc_desc.blk,x
-        cmpd    sdc_blk
+        ldd     dmpkg_desc.blk,x
+        cmpd    dmpkg_blk
         bne     @seek
-        lda     sdc_desc.blk+2,x
-        cmpa    sdc_blk+2
+        lda     dmpkg_desc.blk+2,x
+        cmpa    dmpkg_blk+2
         bne     @seek
-        ldd     sdc_desc.off,x
-        cmpd    sdc_off
+        ldd     dmpkg_desc.off,x
+        cmpd    dmpkg_off
         beq     @here
 @seek   pshs    u
-        lda     sdc_desc.blk,x
-        ldu     sdc_desc.blk+1,x
-        jsr     sdc_start
+        lda     dmpkg_desc.blk,x
+        ldu     dmpkg_desc.blk+1,x
+        jsr     dmpkg_start
         puls    u
         lbcs    @err
-        ldd     sdc_desc.off,x          ; skip to the asset's offset (0-511)
+        ldd     dmpkg_desc.off,x        ; skip to the asset's offset (0-511)
         beq     @here
-        std     sdc_off                 ; stream position once skipped
+        std     dmpkg_off               ; stream position once skipped
         lsra                            ; D = whole pairs to drop
         rorb
         tfr     d,y
@@ -411,172 +412,172 @@ sdc_load
         leay    -1,y
         bne     @skip_loop
 @skip_odd
-        lda     sdc_desc.off+1,x
+        lda     dmpkg_desc.off+1,x
         bita    #1
         beq     @here
         lda     SDC_DATA                ; odd: drop the pair's 1st byte, so
 @here                                   ; the next read is $FF4B
-        lda     sdc_desc.flags,x
-        bita    #SDC_F_DECB
+        lda     dmpkg_desc.flags,x
+        bita    #DMPKG_F_DECB
         bne     @decb
-        ldd     sdc_desc.len,x
-        std     sdc_left
-        lda     sdc_desc.len+2,x
-        sta     sdc_left+2
-        tst     sdc_desc.flags,x        ; SDC_F_PHYS is bit 7
+        ldd     dmpkg_desc.len,x
+        std     dmpkg_left
+        lda     dmpkg_desc.len+2,x
+        sta     dmpkg_left+2
+        tst     dmpkg_desc.flags,x      ; DMPKG_F_PHYS is bit 7
         bmi     @phys
         pshs    u
-        ldu     sdc_desc.dest+1,x
-        jsr     sdc_copy
+        ldu     dmpkg_desc.dest+1,x
+        jsr     dmpkg_copy
         puls    u
         bcs     @err
         bra     @ok
 ; CoCo 3 physical load through the MMU window
 @phys   pshs    u
-        ifdef   SDC_MMU_HOME
-        lda     #SDC_MMU_HOME
+        ifdef   DMPKG_MMU_HOME
+        lda     #DMPKG_MMU_HOME
         else
-        lda     SDC_MMUREG
+        lda     DMPKG_MMUREG
         endc
-        sta     sdc_msave
-        ldd     sdc_desc.dest,x         ; block = dest >> 13: A:B = bits 23-8,
+        sta     dmpkg_msave
+        ldd     dmpkg_desc.dest,x       ; block = dest >> 13: A:B = bits 23-8,
         aslb                            ; shifted left 3 leaves bits 20-13 in A
         rola
         aslb
         rola
         aslb
         rola
-        sta     sdc_mblk
-        sta     SDC_MMUREG
-        ldd     sdc_desc.dest+1,x       ; window offset = dest & $1FFF
+        sta     dmpkg_mblk
+        sta     DMPKG_MMUREG
+        ldd     dmpkg_desc.dest+1,x     ; window offset = dest & $1FFF
         anda    #$1F
-        addd    #SDC_WINDOW
+        addd    #DMPKG_WINDOW
         tfr     d,u
-        sta     sdc_phys                ; nonzero (window is never in page 0)
-        jsr     sdc_copy
+        sta     dmpkg_phys              ; nonzero (window is never in page 0)
+        jsr     dmpkg_copy
         pshs    a,cc
-        lda     sdc_msave
-        sta     SDC_MMUREG
-        clr     sdc_phys
+        lda     dmpkg_msave
+        sta     DMPKG_MMUREG
+        clr     dmpkg_phys
         puls    a,cc
         puls    u
         bcs     @err
         bra     @ok
 ; decb records: [len.w addr.w data]... [0000 exec.w]
-@decb   clr     sdc_left
+@decb   clr     dmpkg_left
 @decb_loop
-        jsr     sdc_getword             ; D = length
+        jsr     dmpkg_getword           ; D = length
         bcs     @err
-        std     sdc_left+1
+        std     dmpkg_left+1
         beq     @decb_end
-        jsr     sdc_getword             ; D = load address
+        jsr     dmpkg_getword           ; D = load address
         bcs     @err
         tfr     d,u
-        jsr     sdc_copy
+        jsr     dmpkg_copy
         bcs     @err
         bra     @decb_loop
 @decb_end
-        jsr     sdc_getword             ; exec address
+        jsr     dmpkg_getword           ; exec address
         bcs     @err
         tfr     d,u
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    b,x,y,pc
-@err    jsr     sdc_fail
+@err    jsr     dmpkg_fail
         puls    b,x,y,pc
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_start
+; Function    : dmpkg_start
 ; Entry       : Reg A = block number bits 23-16
 ;             :     U = block number bits 15-0
 ; Exit        : CC.C clear: stream running, first block READY
 ;             : CC.C set  : A = error code
 ; Destroys    : A, CC
-; Calls       : sdc_stop, sdc_waitidle, sdc_waitready
+; Calls       : dmpkg_stop, dmpkg_waitidle, dmpkg_waitready
 ; Description : Stops any running stream, then starts a new one at the block
 ;             : and resets the stream position to offset 0.
 ;------------------------------------------------------------------------------
-sdc_start
-        jsr     sdc_stop
-        sta     sdc_blk
-        stu     sdc_blk+1
+dmpkg_start
+        jsr     dmpkg_stop
+        sta     dmpkg_blk
+        stu     dmpkg_blk+1
         sta     SDC_P1
         stu     SDC_DATA
         lda     #SDC_CMDMODE
         sta     SDC_LATCH
-        bsr     sdc_waitidle
+        bsr     dmpkg_waitidle
         bcs     @exit
         lda     #SDC_C_STREAM
         sta     SDC_STAT
-        bsr     sdc_waitready
+        bsr     dmpkg_waitready
         bcs     @exit
-        clr     sdc_off
-        clr     sdc_off+1
-        clr     sdc_poll
-        inc     sdc_live
+        clr     dmpkg_off
+        clr     dmpkg_off+1
+        clr     dmpkg_poll
+        inc     dmpkg_live
 @exit   rts
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_settle
+; Function    : dmpkg_settle
 ; Entry       : none
 ; Exit        : none
 ; Destroys    : CC
 ; Calls       : none
-; Description : Delay loop of SDC_DELAY passes, so the SDC has ~20us after a
+; Description : Delay loop of DMPKG_DELAY passes, so the SDC has ~20us after a
 ;             : command before its registers are read.
 ;------------------------------------------------------------------------------
-sdc_settle
+dmpkg_settle
         pshs    x
-        ldx     #SDC_DELAY
+        ldx     #DMPKG_DELAY
 @loop   leax    -1,x
         bne     @loop
         puls    x,pc
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_waitidle
+; Function    : dmpkg_waitidle
 ; Entry       : none
 ; Exit        : CC.C clear: BUSY clear
-;             : CC.C set  : A = SDC_ETIME
+;             : CC.C set  : A = DMPKG_ETIME
 ; Destroys    : A, CC
-; Calls       : sdc_settle
+; Calls       : dmpkg_settle
 ; Description : Settles, then polls status until BUSY clears or the
-;             : SDC_TIMEOUT x 65536 poll limit runs out.
+;             : DMPKG_TIMEOUT x 65536 poll limit runs out.
 ;------------------------------------------------------------------------------
-sdc_waitidle
-        bsr     sdc_settle
+dmpkg_waitidle
+        bsr     dmpkg_settle
         pshs    x
-        lda     #SDC_TIMEOUT
-        sta     sdc_tmo
+        lda     #DMPKG_TIMEOUT
+        sta     dmpkg_tmo
         ldx     #0
 @loop   lda     SDC_STAT
         bita    #SDC_BUSY
         beq     @ok
         leax    -1,x
         bne     @loop
-        dec     sdc_tmo
+        dec     dmpkg_tmo
         bne     @loop
-        lda     #SDC_ETIME              ; ERROR CODE: BUSY timeout
+        lda     #DMPKG_ETIME            ; ERROR CODE: BUSY timeout
         orcc    #1                      ; set carry (error)
         puls    x,pc
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    x,pc
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_waitready
+; Function    : dmpkg_waitready
 ; Entry       : none
 ; Exit        : CC.C clear: READY set
-;             : CC.C set  : A = SDC_EFAIL (FAILED, or BUSY dropped with
-;             :             SDC_ERROR), SDC_EEOF (BUSY dropped, status $00:
-;             :             end of file) or SDC_ETIME
+;             : CC.C set  : A = DMPKG_EFAIL (FAILED, or BUSY dropped with
+;             :             SDC_ERROR), DMPKG_EEOF (BUSY dropped, status $00:
+;             :             end of file) or DMPKG_ETIME
 ; Destroys    : A, CC
-; Calls       : sdc_settle
+; Calls       : dmpkg_settle
 ; Description : Settles, then polls status until READY is set, the controller
 ;             : fails, the stream ends, or the poll limit runs out.
 ;------------------------------------------------------------------------------
-sdc_waitready
-        bsr     sdc_settle
+dmpkg_waitready
+        bsr     dmpkg_settle
         pshs    x
-        lda     #SDC_TIMEOUT
-        sta     sdc_tmo
+        lda     #DMPKG_TIMEOUT
+        sta     dmpkg_tmo
         ldx     #0
 @loop   lda     SDC_STAT
         bmi     @fail
@@ -586,38 +587,38 @@ sdc_waitready
         beq     @eof
         leax    -1,x
         bne     @loop
-        dec     sdc_tmo
+        dec     dmpkg_tmo
         bne     @loop
-        lda     #SDC_ETIME              ; ERROR CODE: READY timeout
+        lda     #DMPKG_ETIME            ; ERROR CODE: READY timeout
         fcb     $8C                     ; skip 2 bytes
-@fail   lda     #SDC_EFAIL              ; ERROR CODE: SDC reported FAILED
+@fail   lda     #DMPKG_EFAIL            ; ERROR CODE: SDC reported FAILED
 @err    orcc    #1                      ; set carry (error)
         puls    x,pc
 @eof    bita    #SDC_ERROR              ; firmware ends a failed stream with
         bne     @fail                   ; $08 (no FAILED bit), a clean one $00
-        lda     #SDC_EEOF               ; ERROR CODE: end of file
+        lda     #DMPKG_EEOF             ; ERROR CODE: end of file
         bra     @err
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    x,pc
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_getbyte
+; Function    : dmpkg_getbyte
 ; Entry       : none
 ; Exit        : CC.C clear: A = next stream byte
 ;             : CC.C set  : A = error code
 ; Destroys    : A, CC
-; Calls       : sdc_waitready, sdc_nextblk
+; Calls       : dmpkg_waitready, dmpkg_nextblk
 ; Description : Reads one byte from $FF4A (even offset) or $FF4B (odd offset),
 ;             : waiting for READY first at the start of each block.
 ;------------------------------------------------------------------------------
-sdc_getbyte
+dmpkg_getbyte
         pshs    b,x
-        tst     sdc_poll
+        tst     dmpkg_poll
         beq     @ready
-        bsr     sdc_waitready
+        bsr     dmpkg_waitready
         bcs     @exit
-        clr     sdc_poll
-@ready  ldx     sdc_off
+        clr     dmpkg_poll
+@ready  ldx     dmpkg_off
         tfr     x,d
         bitb    #1
         bne     @odd
@@ -627,114 +628,114 @@ sdc_getbyte
 @adv    leax    1,x
         cmpx    #512
         bne     @set_off
-        bsr     sdc_nextblk
+        bsr     dmpkg_nextblk
         ldx     #0
 @set_off
-        stx     sdc_off
+        stx     dmpkg_off
         andcc   #$fe                    ; clear carry (success)
 @exit   puls    b,x,pc
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_getword
+; Function    : dmpkg_getword
 ; Entry       : none
 ; Exit        : CC.C clear: D = next two stream bytes (big-endian)
 ;             : CC.C set  : A = error code
 ; Destroys    : A, B, CC
-; Calls       : sdc_getbyte
+; Calls       : dmpkg_getbyte
 ; Description : Reads a 16-bit big-endian value from the stream.
 ;------------------------------------------------------------------------------
-sdc_getword
-        bsr     sdc_getbyte
+dmpkg_getword
+        bsr     dmpkg_getbyte
         bcs     @error
-        tfr     a,b                     ; B = 1st byte (sdc_getbyte keeps B)
-        bsr     sdc_getbyte
+        tfr     a,b                     ; B = 1st byte (dmpkg_getbyte keeps B)
+        bsr     dmpkg_getbyte
         bcs     @error                  ; A = error code
         exg     a,b                     ; D = 1st:2nd
 @error  rts
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_nextblk
+; Function    : dmpkg_nextblk
 ; Entry       : none
 ; Exit        : none
 ; Destroys    : CC
 ; Calls       : none
-; Description : Steps sdc_blk to the next block and flags that READY must be
+; Description : Steps dmpkg_blk to the next block and flags that READY must be
 ;             : polled before its first byte is read.
 ;------------------------------------------------------------------------------
-sdc_nextblk
+dmpkg_nextblk
         pshs    a
-        inc     sdc_blk+2
+        inc     dmpkg_blk+2
         bne     @exit
-        inc     sdc_blk+1
+        inc     dmpkg_blk+1
         bne     @exit
-        inc     sdc_blk
+        inc     dmpkg_blk
 @exit   lda     #1
-        sta     sdc_poll
+        sta     dmpkg_poll
         puls    a,pc
 
 ;------------------------------------------------------------------------------
-; Function    : sdc_copy
+; Function    : dmpkg_copy
 ; Entry       : Reg U = destination
-;             : sdc_left  = bytes to copy (24-bit)
-;             : sdc_phys  = nonzero if U is in the MMU window (sdc_mblk mapped)
+;             : dmpkg_left  = bytes to copy (24-bit)
+;             : dmpkg_phys  = nonzero if U is in the MMU window (dmpkg_mblk mapped)
 ; Exit        : CC.C clear: U advanced past the data
 ;             : CC.C set  : A = error code
 ; Destroys    : A, CC (U advanced)
-; Calls       : sdc_waitready, sdc_nextblk
+; Calls       : dmpkg_waitready, dmpkg_nextblk
 ; Description : Copies stream bytes in chunks capped by the end of the block,
 ;             : the bytes left and, for phys loads, the end of the window (the
 ;             : next 8K is mapped when it fills). Inner loop: 32 bytes per
 ;             : pass, 16x LDD ,X / STD n,U.
 ;------------------------------------------------------------------------------
-sdc_copy
+dmpkg_copy
         pshs    b,x,y
         ldx     #SDC_DATA
-@loop   lda     sdc_left
-        ora     sdc_left+1
-        ora     sdc_left+2
+@loop   lda     dmpkg_left
+        ora     dmpkg_left+1
+        ora     dmpkg_left+2
         bne     @more
         andcc   #$fe                    ; clear carry (success)
 @exit   puls    b,x,y,pc
-@more   tst     sdc_poll                ; new block: wait for the buffer
+@more   tst     dmpkg_poll              ; new block: wait for the buffer
         beq     @nopoll
-        jsr     sdc_waitready
+        jsr     dmpkg_waitready
         bcs     @exit
-        clr     sdc_poll
-@nopoll tst     sdc_phys
+        clr     dmpkg_poll
+@nopoll tst     dmpkg_phys
         beq     @room
-        cmpu    #SDC_WEND               ; window full: map the next 8K
+        cmpu    #DMPKG_WEND             ; window full: map the next 8K
         bne     @room
-        inc     sdc_mblk
-        lda     sdc_mblk
-        sta     SDC_MMUREG
-        ldu     #SDC_WINDOW
+        inc     dmpkg_mblk
+        lda     dmpkg_mblk
+        sta     DMPKG_MMUREG
+        ldu     #DMPKG_WINDOW
 @room   ldd     #512                    ; chunk = bytes left in this block
-        subd    sdc_off
-        tst     sdc_left                ; capped by bytes left to copy
+        subd    dmpkg_off
+        tst     dmpkg_left              ; capped by bytes left to copy
         bne     @cap_win
-        cmpd    sdc_left+1
+        cmpd    dmpkg_left+1
         bls     @cap_win
-        ldd     sdc_left+1
+        ldd     dmpkg_left+1
 @cap_win
-        tst     sdc_phys                ; and by room left in the window
+        tst     dmpkg_phys              ; and by room left in the window
         beq     @set_chunk
-        std     sdc_chunk
-        ldd     #SDC_WEND
+        std     dmpkg_chunk
+        ldd     #DMPKG_WEND
         pshs    u
         subd    ,s++
-        cmpd    sdc_chunk
+        cmpd    dmpkg_chunk
         bls     @set_chunk
-        ldd     sdc_chunk
+        ldd     dmpkg_chunk
 @set_chunk
-        std     sdc_chunk
+        std     dmpkg_chunk
         tfr     d,y                     ; Y = bytes to copy now
-        ldd     sdc_left+1              ; sdc_left -= chunk
-        subd    sdc_chunk
-        std     sdc_left+1
+        ldd     dmpkg_left+1            ; dmpkg_left -= chunk
+        subd    dmpkg_chunk
+        std     dmpkg_left+1
         bcc     @chk_odd
-        dec     sdc_left
+        dec     dmpkg_left
 @chk_odd
-        ldb     sdc_off+1               ; odd offset: pick up the 2nd byte first
+        ldb     dmpkg_off+1             ; odd offset: pick up the 2nd byte first
         bitb    #1
         beq     @even
         lda     1,x
@@ -750,7 +751,7 @@ sdc_copy
         rola
         aslb
         rola
-        sta     sdc_n
+        sta     dmpkg_n
         beq     @w2
         leau    16,u                    ; mid-group: offsets -16..14 fit 5 bits
 @w32    ldd     ,x
@@ -786,7 +787,7 @@ sdc_copy
         ldd     ,x
         std     14,u
         leau    32,u
-        dec     sdc_n
+        dec     dmpkg_n
         bne     @w32
         leau    -16,u                   ; U back to the next free byte
 @w2     cmpy    #2
@@ -799,12 +800,12 @@ sdc_copy
         beq     @adv
         lda     ,x                      ; odd tail: 1st byte of the next pair
         sta     ,u+
-@adv    ldd     sdc_off                 ; advance stream position
-        addd    sdc_chunk
+@adv    ldd     dmpkg_off               ; advance stream position
+        addd    dmpkg_chunk
         cmpd    #512
         bne     @set_off
-        jsr     sdc_nextblk
+        jsr     dmpkg_nextblk
         ldd     #0
 @set_off
-        std     sdc_off
+        std     dmpkg_off
         jmp     @loop

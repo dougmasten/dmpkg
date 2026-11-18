@@ -25,14 +25,14 @@ dmpkg list   example/build/DEMO.DSK
 ```asm
         ldx     #DMPKG_MountName    ; from assettab.asm (0 on a disk image: no mount)
         ldy     #DMPKG_BuildID      ; 0 to skip the stale-image check
-        jsr     sdc_open
+        jsr     dmpkg_open
         bcs     error               ; A = error code
         ldx     #TITLE              ; asset descriptor
-        jsr     sdc_load
+        jsr     dmpkg_load
         bcs     error
         ldx     #CODE               ; DECB asset
-        jsr     sdc_load            ; U = exec address
-        jsr     sdc_close           ; back to floppy emulation
+        jsr     dmpkg_load          ; U = exec address
+        jsr     dmpkg_close         ; back to floppy emulation
         ...
         include "dmpkg.asm"
         include "assets.inc"

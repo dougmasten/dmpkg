@@ -6,7 +6,7 @@ The tests in [TESTING.md](TESTING.md) run against a model of the CoCo SDC. This 
 - STREAM from the disk SDC-DOS mounted with `DRIVE`
 - `AUTOEXEC.BAS` starting the loader
 - mounting a stream image by name
-- `sdc_stop` part way through a block
+- `dmpkg_stop` part way through a block
 - phys loads through the MMU on a CoCo 3
 - reading past track 34 of a disk padded to hard-disk size
 
@@ -42,7 +42,7 @@ Steps:
 
 A run takes a second or two and returns to BASIC. `A` holds the number of failures, but BASIC doesn't show it, so read the screen.
 
-On a CoCo 3, also try both disks at double speed: `POKE 65497,0` before `LOADM`. The runtime's settle delay (`SDC_DELAY`) is sized for 0.89 MHz to 1.79 MHz, so this is the case most likely to fail.
+On a CoCo 3, also try both disks at double speed: `POKE 65497,0` before `LOADM`. The runtime's settle delay (`DMPKG_DELAY`) is sized for 0.89 MHz to 1.79 MHz, so this is the case most likely to fail.
 
 ## Reading the screen
 
@@ -74,26 +74,26 @@ Failures show in inverse video (dark on green) and are counted in the last line,
 
 | cell | what it checks |
 |---|---|
-| `SDC FW` | `sdc_init`: the presence check found the SDC, and the firmware version it reported. If it shows `E1`, the presence check failed. `E6` means the controller didn't answer. Either way the test stops there |
+| `SDC FW` | `dmpkg_init`: the presence check found the SDC, and the firmware version it reported. If it shows `E1`, the presence check failed. `E6` means the controller didn't answer. Either way the test stops there |
 | `COCO` | CoCo 3 (reset vector `$8C1B`) or CoCo 1/2. Only the CoCo 3 runs `F_PHYS` |
-| `BAD ID` | `sdc_open` on the mounted disk with the wrong build_id returns `E4` |
-| `OPEN` | `sdc_open` with no mount streams the disk SDC-DOS mounted in drive 0. If this fails, the test stops |
-| `STOP` | three `sdc_getbyte`, then `sdc_stop` (`$D0` part way through a block, then waiting for BUSY to clear) |
-| `A_ODD` … `E_CODE` | each asset: its memory is zeroed, then `sdc_load`, then the bytes are checked. `B_PACK` starts at an odd offset at an odd address, `C_MULTI` spans three blocks, `D_ALIGN` is block-aligned, and `E_CODE` (a DECB file in `D_ALIGN`'s alignment gap) is a seek backwards |
+| `BAD ID` | `dmpkg_open` on the mounted disk with the wrong build_id returns `E4` |
+| `OPEN` | `dmpkg_open` with no mount streams the disk SDC-DOS mounted in drive 0. If this fails, the test stops |
+| `STOP` | three `dmpkg_getbyte`, then `dmpkg_stop` (`$D0` part way through a block, then waiting for BUSY to clear) |
+| `A_ODD` … `E_CODE` | each asset: its memory is zeroed, then `dmpkg_load`, then the bytes are checked. `B_PACK` starts at an odd offset at an odd address, `C_MULTI` spans three blocks, `D_ALIGN` is block-aligned, and `E_CODE` (a DECB file in `D_ALIGN`'s alignment gap) is a seek backwards |
 | `EXEC` | calls `E_CODE`'s exec address, which must return `D = $600D` |
 | `F_PHYS` | 20,001 bytes to physical `$060001`, across three 8K MMU windows. Physical `$60000–$6FFFF` is the HSCREEN area, unused at power-on |
 | `TAIL` | `HWBIG.DSK` only: 10,000 bytes from past track 34, in the padded part of the image |
 | `RELOAD B` | `B_PACK` again, out of order: the stream restarts at its block and skips to its offset |
-| `MOUNT SDS` | `sdc_open "M:HWTEST.SDS"` mounts by name, with its build_id checked. `E3` means the file isn't in the SDC's current directory |
+| `MOUNT SDS` | `dmpkg_open "M:HWTEST.SDS"` mounts by name, with its build_id checked. `E3` means the file isn't in the SDC's current directory |
 | `S_DATA`, `S_ALIGN` | the stream image's two assets |
-| `NO FILE` | `sdc_open "M:NOSUCH.SDS"` returns `E3` |
-| `REMOUNT` | `sdc_open "M:HWTEST.DSK"` (or `HWBIG.DSK`) puts the disk back in drive 0 for Disk BASIC. If it fails, type `DRIVE 0,"HWTEST.DSK"` before using the disk |
+| `NO FILE` | `dmpkg_open "M:NOSUCH.SDS"` returns `E3` |
+| `REMOUNT` | `dmpkg_open "M:HWTEST.DSK"` (or `HWBIG.DSK`) puts the disk back in drive 0 for Disk BASIC. If it fails, type `DRIVE 0,"HWTEST.DSK"` before using the disk |
 
 The checksums come from `hwtest/mkhw.py`. They're Fletcher-style sums, so they catch bytes in the wrong order or place, not just wrong bytes.
 
 ## Not covered
 
-- **Drive 1** (`SDC_DRIVE equ 1`). The loader is built for drive 0.
+- **Drive 1** (`DMPKG_DRIVE equ 1`). The loader is built for drive 0.
 - **The no-SDC path** (`E1` without waiting for a timeout) on a machine with a regular floppy controller and no SDC. The test disk can't be run from such a machine without the SDC, so this needs a real floppy holding `HWTEST.BIN`.
 - **Firmware older than 1.17** (`E2`). Getting it would mean downgrading the SDC.
 

@@ -39,11 +39,11 @@ block toc_blocks .. asset data, placed first-fit in manifest order
 | 15 | 1 | toc_blocks | blocks used by header + TOC (1–255); first data block |
 | 16 | 16 | name | project name, ASCII, space-padded, not terminated |
 
-`sdc_open` compares `build_id` (bytes 8–11) against `DMPKG_BuildID` from the generated `assettab.asm`, so a program built against a different image fails with error 4. The other header fields aren't checked: the TOC, and through its CRCs the data, are already covered by `build_id`.
+`dmpkg_open` compares `build_id` (bytes 8–11) against `DMPKG_BuildID` from the generated `assettab.asm`, so a program built against a different image fails with error 4. The other header fields aren't checked: the TOC, and through its CRCs the data, are already covered by `build_id`.
 
 ## TOC entry (16 bytes)
 
-Entry *i* sits at offset `32 + 16·i`. Its first 12 bytes are the **asset descriptor**. The same 12 bytes are emitted as the `NAME` label in `assettab.asm` and passed in X to `sdc_load`.
+Entry *i* sits at offset `32 + 16·i`. Its first 12 bytes are the **asset descriptor**. The same 12 bytes are emitted as the `NAME` label in `assettab.asm` and passed in X to `dmpkg_load`.
 
 | off | size | field | meaning |
 |---|---|---|---|
@@ -70,11 +70,11 @@ With neither PHYS nor DECB set, `dest` is a 16-bit CPU address held in 3 bytes (
 
 - **Placement:** first fit, in manifest order. Each asset takes the first free space it fits in, at any offset, so assets normally follow each other back to back. An asset marked `align: true` starts on a fresh block (`offset = 0`) instead. The gap that leaves stays free, and a later asset small enough to fit goes there, so image order can differ from manifest order. Unused bytes are `pad_byte`. The first asset always starts at the first data block, offset 0. On a disk image no asset crosses track 17 (see below).
 - **Raw:** the file's bytes, unchanged.
-- **DECB:** a LOADM binary is re-encoded as a record stream that `sdc_load` follows:
+- **DECB:** a LOADM binary is re-encoded as a record stream that `dmpkg_load` follows:
 
   ```
   repeat: len(2) addr(2) data(len)      one per non-empty segment
-  end:    $0000  exec(2)                 sdc_load returns exec in U
+  end:    $0000  exec(2)                 dmpkg_load returns exec in U
   ```
 
   Unlike the original LOADM file, records have no `$00`/`$FF` type byte. A zero length marks the end. Empty segments are dropped. Stored `length` covers the whole record stream, terminator included.
@@ -92,7 +92,7 @@ All CRCs are standard CRC-32 (IEEE 802.3, reflected, init/xorout `$FFFFFFFF`; Py
 
 The runtime mounts the image with the string in `DMPKG_MountName`: `M:` followed by the `sdc_path`, upper-cased and NUL-terminated. Each part of the path must be an 8.3 name, separated by `/`. Example: `games/demo.sds` → `M:GAMES/DEMO.SDS`.
 
-A disk image with no `sdc_path` has no mount name: `DMPKG_MountName` is an `equ 0`, and `sdc_open` with X = 0 streams whatever is already mounted in `SDC_DRIVE`, which is the disk the loader was run from.
+A disk image with no `sdc_path` has no mount name: `DMPKG_MountName` is an `equ 0`, and `dmpkg_open` with X = 0 streams whatever is already mounted in `DMPKG_DRIVE`, which is the disk the loader was run from.
 
 ## DECB disk image
 

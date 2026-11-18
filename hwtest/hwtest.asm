@@ -8,17 +8,17 @@
 ; inverse video, and a summary line follows. Returns to BASIC with A = the
 ; number of failures.
 ;
-;   SDC FW      sdc_init: presence check and firmware version
+;   SDC FW      dmpkg_init: presence check and firmware version
 ;   COCO        CoCo 3 (phys loads run) or CoCo 1/2 (they're skipped)
-;   BAD ID      sdc_open on the mounted disk with a wrong build_id: E4
-;   OPEN        sdc_open on the mounted disk (no mount)
-;   STOP        three sdc_getbyte, then sdc_stop
-;   A_ODD..     each asset: memory wiped, sdc_load, bytes checked
+;   BAD ID      dmpkg_open on the mounted disk with a wrong build_id: E4
+;   OPEN        dmpkg_open on the mounted disk (no mount)
+;   STOP        three dmpkg_getbyte, then dmpkg_stop
+;   A_ODD..     each asset: memory wiped, dmpkg_load, bytes checked
 ;   EXEC        call the decb asset's exec address: D = $600D
 ;   RELOAD B    B_PACK again, out of order: restart and skip to its offset
-;   MOUNT SDS   sdc_open "M:HWTEST.SDS" by name, then its two assets
-;   NO FILE     sdc_open "M:NOSUCH.SDS": E3
-;   REMOUNT     sdc_open "M:HWTEST.DSK" (or HWBIG.DSK), so Disk BASIC gets
+;   MOUNT SDS   dmpkg_open "M:HWTEST.SDS" by name, then its two assets
+;   NO FILE     dmpkg_open "M:NOSUCH.SDS": E3
+;   REMOUNT     dmpkg_open "M:HWTEST.DSK" (or HWBIG.DSK), so Disk BASIC gets
 ;               its disk back in drive 0
 ;
 ; Build: make hwtest (two passes, like the example).
@@ -61,7 +61,7 @@ start
 ;
 ; ---- controller and machine
 ;
-        jsr     sdc_init
+        jsr     dmpkg_init
         bcc     @found
         ldx     #t_sdc
         jsr     cell            ; E1: no SDC, E6: no answer
@@ -85,26 +85,26 @@ start
 ;
         ldx     #0
         ldy     #badid
-        jsr     sdc_open
-        ldb     #SDC_EHDR
+        jsr     dmpkg_open
+        ldb     #DMPKG_EHDR
         jsr     want
         ldx     #t_badid
         jsr     cell
-        ldx     #DMPKG_MountName ; 0: the disk in SDC_DRIVE
+        ldx     #DMPKG_MountName ; 0: the disk in DMPKG_DRIVE
         ldy     #DMPKG_BuildID
-        jsr     sdc_open
+        jsr     dmpkg_open
         jsr     got
         ldx     #t_open
         jsr     cell
         tsta
         lbne    finish
-        jsr     sdc_getbyte     ; stop part way through a block
+        jsr     dmpkg_getbyte   ; stop part way through a block
         bcs     @stop
-        jsr     sdc_getbyte
+        jsr     dmpkg_getbyte
         bcs     @stop
-        jsr     sdc_getbyte
+        jsr     dmpkg_getbyte
         bcs     @stop
-        jsr     sdc_stop
+        jsr     dmpkg_stop
 @stop   jsr     got
         ldx     #t_stop
         jsr     cell
@@ -162,7 +162,7 @@ start
 ;
         ldx     #S_DMPKG_MountName
         ldy     #S_DMPKG_BuildID
-        jsr     sdc_open
+        jsr     dmpkg_open
         jsr     got
         ldx     #t_mount
         jsr     cell
@@ -178,21 +178,21 @@ start
         jsr     ldtest
 @nos    ldx     #nofile
         ldy     #0
-        jsr     sdc_open
-        ldb     #SDC_EMOUNT
+        jsr     dmpkg_open
+        ldb     #DMPKG_EMOUNT
         jsr     want
         ldx     #t_nofile
         jsr     cell
         ldx     #home           ; put the disk back in drive 0
         ldy     #DMPKG_BuildID
-        jsr     sdc_open
+        jsr     dmpkg_open
         jsr     got
         ldx     #t_home
         jsr     cell
 ;
 ; ---- summary, back to BASIC
 ;
-finish  jsr     sdc_close
+finish  jsr     dmpkg_close
         jsr     newrow
         lda     fails
         bne     @fail
@@ -226,11 +226,11 @@ finish  jsr     sdc_close
 ;------------------------------------------------------------------------------
 ; ldtest: wipe an asset's memory, load it, check its bytes, print the cell
 ; Entry: X = descriptor, Y = checksum entry (NAME_SUM), U = label
-; Exit : lres = result, lastu = U from sdc_load (exec address)
+; Exit : lres = result, lastu = U from dmpkg_load (exec address)
 ;------------------------------------------------------------------------------
 ldtest  pshs    x,y,u
         jsr     wipe
-        jsr     sdc_load
+        jsr     dmpkg_load
         bcs     @res
         stu     lastu
         jsr     check
@@ -280,7 +280,7 @@ walk    pshs    x,y,u
 @reg    lda     ,u+             ; flags
         sta     rflag
         bpl     @hdr
-        ldb     SDC_MMUREG      ; phys: save the window's block
+        ldb     DMPKG_MMUREG    ; phys: save the window's block
         stb     msave
 @hdr    lda     ,u+
         sta     ahi
@@ -308,12 +308,12 @@ walk    pshs    x,y,u
         rorb
         lsra
         rorb
-        stb     SDC_MMUREG
+        stb     DMPKG_MMUREG
         ldd     alo
         anda    #$1F
-        addd    #SDC_WINDOW
+        addd    #DMPKG_WINDOW
         tfr     d,x
-        ldd     #SDC_WEND       ; as far as the window's end
+        ldd     #DMPKG_WEND     ; as far as the window's end
         pshs    x
         subd    ,s++
         cmpd    left
@@ -347,7 +347,7 @@ walk    pshs    x,y,u
         tst     rflag
         bpl     @cmp
         ldb     msave
-        stb     SDC_MMUREG
+        stb     DMPKG_MMUREG
 @cmp    ldd     ,u++            ; expected sums
         tst     op
         beq     @skip2

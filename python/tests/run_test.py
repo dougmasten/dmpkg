@@ -19,7 +19,7 @@ The SDC model enforces the protocol as documented and raises on misuse:
     STREAM is rejected on firmware before 117
   - mounted=: an image already in drive 0, as when the loader came off it
   - Flash registers: bits 5-6 of the $FF42 data register read back in
-    $FF43 (what sdc_init's presence check relies on)
+    $FF43 (what dmpkg_init's presence check relies on)
   - present=False: no SDC at all; its registers read $FF and any command
     written is logged as an error
 
@@ -59,7 +59,7 @@ import mkassets  # noqa: E402
 
 LWASM = os.environ.get("LWASM", "lwasm")
 
-# runtime error codes (SDC_E* in asm/dmpkg.asm)
+# runtime error codes (DMPKG_E* in asm/dmpkg.asm)
 ENODEV, EVER, EMOUNT, EHDR, EEOF, ETIME, EFAIL = range(1, 8)
 READY_LAG = 20          # cycles READY stays stale after a block is drained
 FILL_TIME = 400         # cycles to "read" the next block from the card
@@ -318,25 +318,25 @@ done    bra     done                fixed at $1002 - harness stops here
 start
         ldx     #DMPKG_MountName
         ldy     #{hdr}
-        jsr     sdc_open
+        jsr     dmpkg_open
         lbcs    fail
         ldx     #FONT               in image order...
-        jsr     sdc_load
+        jsr     dmpkg_load
         lbcs    fail
         ldx     #PALETTE            ...packed behind it, no restart expected
-        jsr     sdc_load
+        jsr     dmpkg_load
         lbcs    fail
         ldx     #TITLE              forward seek (aligned), phys over 3 windows
-        jsr     sdc_load
+        jsr     dmpkg_load
         lbcs    fail
         ldx     #LEVEL1             backward seek + skip to offset 271
-        jsr     sdc_load
+        jsr     dmpkg_load
         lbcs    fail
         ldx     #MAP                packed behind LEVEL1, no restart expected
-        jsr     sdc_load
+        jsr     dmpkg_load
         lbcs    fail
         ldx     #CODE               decb, in TITLE's align gap behind MAP: no restart
-        jsr     sdc_load
+        jsr     dmpkg_load
         lbcs    fail
         stu     $0102
         ldx     #$6400              wipe PALETTE, then reload it out of order:
@@ -345,12 +345,12 @@ wipe    clr     ,x+
         decb
         bne     wipe
         ldx     #PALETTE
-        jsr     sdc_load
+        jsr     dmpkg_load
         lbcs    fail
-        jsr     sdc_close
+        jsr     dmpkg_close
         clra
 fail    sta     $0100
-        ldd     sdc_ver
+        ldd     dmpkg_ver
         std     $0104
         bra     done
 
@@ -429,11 +429,11 @@ INIT_ASM = r"""
         bra     start
 done    bra     done
 start
-        jsr     sdc_init
+        jsr     dmpkg_init
         std     $0104               D = version, or A = error code
         tfr     cc,a
         sta     $0100               CC: carry in bit 0
-        jsr     sdc_close
+        jsr     dmpkg_close
         bra     done
 
         include "dmpkg.asm"
@@ -441,8 +441,8 @@ start
 
 
 def init_test():
-    """sdc_init: finds the SDC and returns its version in D (0 before 113),
-    or SDC_ENODEV without writing a command when nothing is there; sdc_open
+    """dmpkg_init: finds the SDC and returns its version in D (0 before 113),
+    or DMPKG_ENODEV without writing a command when nothing is there; dmpkg_open
     on a machine with no SDC fails the same way."""
     results = []
     with tempfile.TemporaryDirectory() as td:
@@ -452,14 +452,14 @@ def init_test():
         m.run(prog, 0x1000, 0x1002)
         cc, d = m.peek(0x100, 1)[0], int.from_bytes(m.peek(0x104, 2), "big")
         results.append(check(not cc & 1 and d == want and not m.sdc.cmdmode,
-                             f"sdc_init, firmware {fw:X}: D=${d:04X}, carry {cc & 1}, "
-                             "back in emulation mode after sdc_close"))
+                             f"dmpkg_init, firmware {fw:X}: D=${d:04X}, carry {cc & 1}, "
+                             "back in emulation mode after dmpkg_close"))
     m = Machine({}, present=False)
     c0 = m.cpu.cycles
     m.run(prog, 0x1000, 0x1002)
     cc, a = m.peek(0x100, 1)[0], m.peek(0x104, 1)[0]
     results.append(check(cc & 1 and a == ENODEV and not m.sdc.log,
-                         f"sdc_init, no SDC -> SDC_ENODEV (A=${a:02X}, carry {cc & 1}, "
+                         f"dmpkg_init, no SDC -> DMPKG_ENODEV (A=${a:02X}, carry {cc & 1}, "
                          f"{m.cpu.cycles - c0} cycles, no command written)"))
     return all(results)
 
@@ -471,10 +471,10 @@ done    bra     done
 start
         ldx     #DMPKG_MountName
         ldy     #DMPKG_BuildID
-        jsr     sdc_open
+        jsr     dmpkg_open
         lbcs    fail
         ldx     #CODE               length word straddles blocks 1/2
-        jsr     sdc_load
+        jsr     dmpkg_load
         bcs     fail
         clra
 fail    sta     $0100
@@ -488,8 +488,8 @@ fail    sta     $0100
 
 def decb_word_fail_test():
     """A decb asset packed at offset 511: its first length word is split
-    across blocks 1 and 2, and block 2 fails. sdc_getword must return the
-    error code (SDC_EFAIL), not the length's first byte."""
+    across blocks 1 and 2, and block 2 fails. dmpkg_getword must return the
+    error code (DMPKG_EFAIL), not the length's first byte."""
     with tempfile.TemporaryDirectory() as td:
         with open(os.path.join(td, "pad.bin"), "wb") as f:
             f.write(bytes(511))
@@ -523,7 +523,7 @@ def decb_word_fail_test():
         m.run(prog, 0x1000, 0x1002)
         err = m.peek(0x100, 1)[0]
         results.append(check(err == EFAIL, f"decb word split across a failing block ({how}) "
-                                       f"-> SDC_EFAIL (A=${err:02X})"))
+                                       f"-> DMPKG_EFAIL (A=${err:02X})"))
         results.append(check(m.sdc.stream is None and ("abort",) in m.sdc.log,
                              "  stream stopped after the error"))
     return all(results)
@@ -651,40 +651,40 @@ def run_all(ex, src):
     bprog, bdone = assemble(ex, build, "badid")
     m = Machine(files_on_card, mounted="DEMO.DSK")
     m.run(bprog, 0x1000, bdone)
-    chk(m.peek(0x100, 1)[0] == EHDR, "wrong build_id -> SDC_EHDR")
+    chk(m.peek(0x100, 1)[0] == EHDR, "wrong build_id -> DMPKG_EHDR")
 
     # ---- run 3: card hangs part way through TITLE (phys load): READY never
-    # comes, so sdc_waitready times out. SDC_TIMEOUT=1 (65536 polls) keeps
+    # comes, so dmpkg_waitready times out. DMPKG_TIMEOUT=1 (65536 polls) keeps
     # the run short; the MMU window must be put back even on the error.
-    tprog, tdone = assemble(ex, build, "DMPKG_BuildID", defines=["SDC_TIMEOUT=1"])
+    tprog, tdone = assemble(ex, build, "DMPKG_BuildID", defines=["DMPKG_TIMEOUT=1"])
     m = Machine(files_on_card, mounted="DEMO.DSK")
     m.sdc.stall_block = A["TITLE"].block + 1
     c0 = m.cpu.cycles
     m.run(tprog, 0x1000, tdone, max_ops=50_000_000)
     err = m.peek(0x100, 1)[0]
-    chk(err == ETIME, f"card stalls in TITLE -> SDC_ETIME (A=${err:02X}, "
+    chk(err == ETIME, f"card stalls in TITLE -> DMPKG_ETIME (A=${err:02X}, "
                   f"{m.cpu.cycles - c0} cycles)")
     chk(m.mmu == 0x3A, "  MMU window restored after the error")
     chk(m.sdc.stream is None and ("abort",) in m.sdc.log, "  stream stopped after the error")
     chk(m.peek(0x6000, 767) == src["font.bin"], "  assets before it still loaded")
 
-    # ---- no SDC at all: sdc_open stops at the presence check
+    # ---- no SDC at all: dmpkg_open stops at the presence check
     m = Machine(files_on_card, present=False)
     m.run(prog, 0x1000, done)
     err = m.peek(0x100, 1)[0]
-    chk(err == ENODEV and not m.sdc.log, f"no SDC -> SDC_ENODEV, no command written (A=${err:02X})")
+    chk(err == ENODEV and not m.sdc.log, f"no SDC -> DMPKG_ENODEV, no command written (A=${err:02X})")
 
     # ---- run 4-6: firmware version gate (117 added STREAM, 113 VERSION)
     for fw, want, what in ((0x0117, 0, "firmware 117 accepted"),
-                           (0x0116, EVER, "firmware 116 -> SDC_EVER"),
-                           (0x0110, EVER, "firmware before VERSION -> SDC_EVER")):
+                           (0x0116, EVER, "firmware 116 -> DMPKG_EVER"),
+                           (0x0110, EVER, "firmware before VERSION -> DMPKG_EVER")):
         m = Machine(files_on_card, firmware=fw, mounted="DEMO.DSK")
         m.run(prog, 0x1000, done)
         err = m.peek(0x100, 1)[0]
         ver = int.from_bytes(m.peek(0x104, 2), "big")
         expect_ver = fw if fw >= 0x0113 else 0
         chk(err == want and ver == expect_ver,
-              f"{what} (A=${err:02X}, sdc_ver=${ver:04X})")
+              f"{what} (A=${err:02X}, dmpkg_ver=${ver:04X})")
         if want:
             chk(not any(e[0] in ("mount", "stream") for e in m.sdc.log),
                   "  no mount or stream attempted")
@@ -713,11 +713,11 @@ def run_all(ex, src):
 
     m = Machine({"OTHER.SDS": simg})
     m.run(prog, 0x1000, done)
-    chk(m.peek(0x100, 1)[0] == EMOUNT, "missing file -> SDC_EMOUNT")
+    chk(m.peek(0x100, 1)[0] == EMOUNT, "missing file -> DMPKG_EMOUNT")
 
     m = Machine({"GAMES/DEMO.SDS": simg[:image.MIN_IMAGE - 512]})
     m.run(prog, 0x1000, done)
-    chk(m.peek(0x100, 1)[0] == EMOUNT, "image under 82,944 bytes -> SDC_EMOUNT")
+    chk(m.peek(0x100, 1)[0] == EMOUNT, "image under 82,944 bytes -> DMPKG_EMOUNT")
 
     return all(results)
 
@@ -729,17 +729,17 @@ done    bra     done
 start
         ldx     #DMPKG_MountName
         ldy     #DMPKG_BuildID
-        jsr     sdc_open
+        jsr     dmpkg_open
         bcs     fail
         ldx     #GAPFILL
-        jsr     sdc_load
+        jsr     dmpkg_load
         bcs     fail
         ldx     #HUGE
-        jsr     sdc_load
+        jsr     dmpkg_load
         bcs     fail
         clra
 fail    sta     $0100
-        jsr     sdc_close
+        jsr     dmpkg_close
         bra     done
 
         include "dmpkg.asm"
