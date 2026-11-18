@@ -556,9 +556,9 @@ def check_assets(m, src, A, chk, pre=""):
     chk(m.peek(0x6500, 1500) == src["level1.bin"], pre + "LEVEL1 bytes")
     chk(m.peek(0x7000, 1920) == src["map.bin"], pre + "MAP bytes")
     t = src["title.gfx"]
-    chk(bytes(m.phys[0x7A001:0x7A001 + len(t)]) == t,
+    chk(bytes(m.phys[0x60001:0x60001 + len(t)]) == t,
         pre + "TITLE in physical RAM across MMU windows")
-    chk(m.phys[0x7A000] == 0 and m.phys[0x7A001 + len(t)] == 0, pre + "TITLE no overrun either side")
+    chk(m.phys[0x60000] == 0 and m.phys[0x60001 + len(t)] == 0, pre + "TITLE no overrun either side")
     chk(m.mmu == 0x3A, pre + "MMU window restored")
     for addr, data in A["CODE"].segs:
         chk(m.peek(addr, len(data)) == data, pre + f"CODE segment ${addr:04X} ({len(data)} bytes)")

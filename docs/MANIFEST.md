@@ -45,7 +45,7 @@ assets:
     load: "$6000"                  # CPU address
   - name: title
     file: assets/title.gfx
-    phys: 0x7A001                  # CoCo 3 physical address
+    phys: 0x60001                  # CoCo 3 physical address
     align: true                    # start on a fresh 512-byte block
   - name: code
     file: assets/code.bin

@@ -13,7 +13,7 @@ out the same every time; the test passes its own seed.
   palette.bin   16 bytes   packed after font
   level1.bin  1500 bytes   spans 3 blocks
   map.bin     1920 bytes
-  title.gfx  20001 bytes   phys load at $07A001, crosses three 8K windows (aligned)
+  title.gfx  20001 bytes   phys load at $060001, crosses three 8K windows (aligned)
   code.bin    LOADM file   301 bytes at $3000, 77 bytes at $3400, exec $3000
 """
 import argparse

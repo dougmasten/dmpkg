@@ -32,7 +32,7 @@ assets:
 
   - name: title
     file: assets/title.gfx
-    phys: 0x7A001              # CoCo 3 physical address, loaded via MMU window
+    phys: 0x60001              # CoCo 3 physical address, loaded via MMU window
     align: true                # start on a fresh 512-byte block
 
   - name: code
