@@ -20,7 +20,7 @@ def build(manifest_path: str, verbose=False, loader=True) -> dict:
     # ---- placement and size
     toc_bytes, toc_blocks = image.toc_size(len(assets))
     data0 = toc_blocks * image.BLOCK
-    end = layout.place(assets, data0, project.disk)
+    end = layout.place(assets, data0, project.disk, project.reserve)
     size = layout.image_size(end, project.min_size, project.disk)
     blocks = size // image.BLOCK
 
@@ -43,7 +43,7 @@ def build(manifest_path: str, verbose=False, loader=True) -> dict:
             files.append(project.loader)
             if project.autoexec:
                 files.append(decb.autoexec(*project.loader[:2]))
-        disk_files = decb.write_disk(img, used, files)
+        disk_files = decb.write_disk(img, used, files, project.data)
 
     # ---- write it all
     def out(p):

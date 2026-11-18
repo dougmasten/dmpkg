@@ -63,7 +63,8 @@ def cmd_verify(path) -> bool:
 
 def verify_disk(img: bytes, h: dict, ents: list) -> bool:
     """Disk checks: SDC geometry, no asset on track 17, and every granule
-    holding header, TOC or asset bytes owned by DMPKG.DAT and nothing else."""
+    holding header, TOC or asset bytes owned by the data file (the one that
+    owns granule 0, where the header is) and nothing else."""
     ok = True
     if len(img) < DISK_BYTES or SS_MAX < len(img) < HD_MIN:
         print(f"disk size {len(img)}: the SDC would not see 35 single-sided tracks")
@@ -80,6 +81,10 @@ def verify_disk(img: bytes, h: dict, ents: list) -> bool:
                 print(f"granule {g} in both {owner[g]} and {f}")
                 ok = False
             owner[g] = f
+    data = owner.get(0)
+    if data is None:
+        print("granule 0 (header) not owned by any file")
+        return False
     runs = [(0, h["toc_blocks"] * BLOCK)] + [(e["block"] * BLOCK + e["off"], e["length"])
                                               for e in ents]
     for i, (pos, n) in enumerate(runs):
@@ -92,8 +97,8 @@ def verify_disk(img: bytes, h: dict, ents: list) -> bool:
             ok = False
             continue
         for g in range(gran_of(pos), gran_of(stop - 1) + 1):
-            if owner.get(g) != "DMPKG.DAT":
-                print(f"{what}: granule {g} not owned by DMPKG.DAT")
+            if owner.get(g) != data:
+                print(f"{what}: granule {g} not owned by {data}")
                 ok = False
     return ok
 

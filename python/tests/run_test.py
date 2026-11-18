@@ -817,6 +817,50 @@ def disk_layout_test():
             full = str(e)
         results.append(check(full and full.startswith("disk full"),
                              f"no granule left for the loader -> {full!r}"))
+
+        # reserve: 2 keeps the two granules before track 17 for the loader
+        # and AUTOEXEC.BAS; LOW (all of tracks 0-16) carries on past track 17
+        doc["project"]["disk"]["reserve"] = 2
+        with open(man, "w") as f:
+            yaml.safe_dump(doc, f)
+        res = pack.build(man)
+        pos = {a.name: a.block * 512 + a.off for a in res["assets"]}
+        files = disk_files(read(res["image"]))
+        results.append(check(pos == {"LOW": decb.DIR_HI, "FILL": decb.DIR_HI + decb.DIR_LO - 512}
+                             and "TINY.BIN" in files and "AUTOEXEC.BAS" in files,
+                             f"reserve: 2 leaves room for the loader {pos}"))
+        doc["project"]["disk"]["reserve"] = 34
+        with open(man, "w") as f:
+            yaml.safe_dump(doc, f)
+        try:
+            pack.build(man)
+            big = None
+        except PackError as e:
+            big = str(e)
+        results.append(check(big and big.startswith("project.disk.reserve"),
+                             f"reserve past the TOC is an error -> {big!r}"))
+
+        # data: names the file that owns the dmpkg granules
+        doc["project"]["disk"]["reserve"] = 2
+        doc["project"]["disk"]["data"] = "game.dat"
+        with open(man, "w") as f:
+            yaml.safe_dump(doc, f)
+        res = pack.build(man)
+        files = disk_files(read(res["image"]))
+        results.append(check(sorted(files) == ["AUTOEXEC.BAS", "GAME.DAT", "TINY.BIN"]
+                             and verify(res["image"]),
+                             f"data: game.dat names the data file {sorted(files)}, verify passes"))
+        for clash in ("tiny.bin", "autoexec.bas"):
+            doc["project"]["disk"]["data"] = clash
+            with open(man, "w") as f:
+                yaml.safe_dump(doc, f)
+            try:
+                pack.build(man)
+                err = None
+            except PackError as e:
+                err = str(e)
+            results.append(check(err and err.startswith("project.disk.data"),
+                                 f"data: {clash} clashes -> {err!r}"))
     return all(results)
 
 

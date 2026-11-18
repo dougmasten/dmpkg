@@ -101,10 +101,11 @@ def gran_of(pos: int) -> int:
     return (t - (t > DIR_TRACK)) * 2 + (pos % TRACK_BYTES) // GRAN_BYTES
 
 
-def write_disk(img: bytearray, used: list, files: list) -> list:
+def write_disk(img: bytearray, used: list, files: list, data=("DMPKG", "DAT")) -> list:
     """Make the first 35 tracks of img a DECB disk. used holds (pos, length)
     runs of dmpkg data (header, TOC, assets); every granule they touch goes
-    to DMPKG.DAT, so Disk BASIC never hands it out. files holds (name, ext,
+    to the data file (DMPKG.DAT unless data names another), so Disk BASIC
+    never hands it out. files holds (name, ext,
     bytes) put in the granules left over. Returns [(file, granules)]."""
     fat = bytearray([0xFF]) * GRANULES          # $FF: free
     reach = {}                                  # granule -> bytes used from its start
@@ -125,14 +126,15 @@ def write_disk(img: bytearray, used: list, files: list) -> list:
         return tail - (sectors - 1) * SECTOR
 
     dat = sorted(reach)
-    entries = [("DMPKG", "DAT", 1, False, dat[0], chain(dat, reach[dat[-1]]))]
-    out = [("DMPKG.DAT", len(dat))]
+    entries = [(*data, 1, False, dat[0], chain(dat, reach[dat[-1]]))]
+    out = [(data[0] + ("." + data[1] if data[1] else ""), len(dat))]
     for name, ext, data in files:
         free = [g for g in range(GRANULES) if fat[g] == 0xFF]
         need = -(-len(data) // GRAN_BYTES)
         if need > len(free):
             raise PackError(f"disk full: {name}.{ext} needs {need} granule(s), "
-                            f"{len(free)} left after the assets")
+                            f"{len(free)} left after the assets (project.disk.reserve "
+                            "keeps granules free for the loader and AUTOEXEC.BAS)")
         grans = free[:need]
         for i, g in enumerate(grans):
             part = data[i * GRAN_BYTES:(i + 1) * GRAN_BYTES]

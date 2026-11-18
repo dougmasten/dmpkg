@@ -38,6 +38,8 @@ project:
   disk:                            # also make the image a DECB disk
     loader: build/LOADER.BIN       # LOADM file put on the disk
     autoexec: true                 # AUTOEXEC.BAS that runs it
+    reserve: 0                     # granules kept free for those two
+    data: DMPKG.DAT                # DECB file that owns the asset granules
 
 assets:
   - name: font
@@ -86,6 +88,8 @@ Output folders (for `image`, `equates`, `table` and `map`) are created if they d
 |---|---|---|
 | `loader` | none | LOADM (DECB binary) file to put on the disk, under its own file name. The name must be a valid DECB 8.3 name (letters, digits and `_$#!&@%^()'{}~-`); it's upper-cased on the disk. The file must be a well-formed LOADM file. |
 | `autoexec` | `true` with a `loader`, else `false` | Also write `AUTOEXEC.BAS` (ASCII BASIC: `10 LOADM"LOADER.BIN":EXEC`, with the loader's name), which SDC-DOS runs at power-on. Needs a `loader`. |
+| `reserve` | `0` | Granules (2,304 bytes each) kept free just before track 17, so the loader and `AUTOEXEC.BAS` still fit when the assets would fill the disk. Placement only depends on the manifest, so both passes of a two-pass build get the same layout. A loader under 2,304 bytes plus `AUTOEXEC.BAS` needs `2`. |
+| `data` | `DMPKG.DAT` | Name of the DECB file that owns the granules holding the header, TOC and assets (what `DIR` shows). It must be a valid 8.3 name, and can't be the loader's name or `AUTOEXEC.BAS`. Only the directory entry changes: the layout and build_id stay the same. |
 
 The loader is built in two passes. `dmpkg build --no-loader` leaves the loader (and `AUTOEXEC.BAS`) off the disk; the loader is assembled against the include files that pass writes, then a plain `dmpkg build` puts it on the disk. Without `--no-loader`, a missing `loader` file isn't an error either: dmpkg prints a note and writes the disk without it. Asset placement and the build_id don't depend on the loader, so the second pass writes the same include files. See [DISK.md](DISK.md).
 
@@ -173,12 +177,13 @@ With `disk:` and no `sdc_path`, there's no mount name: `SDC_MountName` is 0, and
 - `project`, `project.disk` or an asset has a key it doesn't know (catches typos)
 - `image` is missing, or `min_size` is below `0x14400`
 - a number can't be read
-- `sdc_path` or the loader's name isn't a valid 8.3 name
+- `sdc_path`, the loader's name or `data` isn't a valid 8.3 name, or `data` is the loader's name or `AUTOEXEC.BAS`
 - `autoexec` is set without a `loader`, or the loader isn't a LOADM file
 - an asset lacks `name` or `file`, two names give the same symbol, or `type` is neither `raw` nor `decb`
 - a raw asset is empty, has both or neither of `load`/`phys`, or runs past `$FFFF` (`load`) or 2MB (`phys`)
 - a decb asset has `load` or `phys`, or its file is malformed
 - an asset file can't be read, or is 16MB or more
 - the TOC is too big (more than 255 blocks) or runs into a disk's directory track
-- a disk has no granules left for the loader or `AUTOEXEC.BAS` ("disk full")
+- a disk has no granules left for the loader or `AUTOEXEC.BAS` ("disk full"; see `reserve`)
+- `reserve` asks for more granules than there are between the TOC and track 17
 - the image would be larger than the 24-bit block range

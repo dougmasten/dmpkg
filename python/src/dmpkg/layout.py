@@ -4,7 +4,7 @@ Where things go in an image: assets placed first fit in manifest order
 """
 from __future__ import annotations
 
-from .decb import DIR_HI, DIR_LO, DISK_BYTES, HD_MIN, SS_MAX
+from .decb import DIR_HI, DIR_LO, DISK_BYTES, GRAN_BYTES, HD_MIN, SS_MAX
 from .errors import PackError
 from .image import BLOCK, MAX_BLOCKS, Asset
 
@@ -23,19 +23,24 @@ def first_fit(free: list, n: int, align: bool) -> int:
     raise AssertionError("the last free range is open-ended")
 
 
-def place(assets: list[Asset], data0: int, disk: bool) -> int:
+def place(assets: list[Asset], data0: int, disk: bool, reserve: int = 0) -> int:
     """Set each asset's block and offset; return the end of the last byte.
 
     Data starts at data0 (after the header and TOC). Each asset, in manifest
     order, takes the first free space it fits, so a small asset can fill an
     align gap (or, on a disk, the space before track 17) left earlier. A
-    stream can't jump track 17, so on a disk no asset crosses it."""
+    stream can't jump track 17, so on a disk no asset crosses it. reserve
+    granules just before track 17 stay free for the loader and AUTOEXEC.BAS."""
     if not disk:
         free = [(data0, None)]
     else:
         if data0 > DIR_LO:
             raise PackError("TOC runs into the DECB directory track")
-        free = [(data0, DIR_LO), (DIR_HI, None)]
+        top = DIR_LO - reserve * GRAN_BYTES
+        if top < data0:
+            raise PackError(f"project.disk.reserve: {reserve} granules don't fit "
+                            f"before track 17 (at most {(DIR_LO - data0) // GRAN_BYTES})")
+        free = [(data0, top), (DIR_HI, None)]
     for a in assets:
         a.block, a.off = divmod(first_fit(free, len(a.data), a.align), BLOCK)
     return max(a.pos + len(a.data) for a in assets)

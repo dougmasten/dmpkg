@@ -5,7 +5,7 @@ This is the on-card layout written by `dmpkg build` and read by `asm/dmpkg.asm` 
 An image comes in two forms with the same header, TOC and asset encoding:
 
 - **Stream image** (`.SDS`): just the dmpkg data. The program mounts it by name.
-- **Disk image** (`.DSK`, with `disk:` in the manifest): also a 35-track DECB disk. The dmpkg data sits in granules owned by a `DMPKG.DAT` file, next to the loader program, so one file holds both. See [DECB disk image](#decb-disk-image).
+- **Disk image** (`.DSK`, with `disk:` in the manifest): also a 35-track DECB disk. The dmpkg data sits in granules owned by a `DMPKG.DAT` file (or the name in `disk.data`), next to the loader program, so one file holds both. See [DECB disk image](#decb-disk-image).
 
 ## Overall layout
 
@@ -86,7 +86,7 @@ All CRCs are standard CRC-32 (IEEE 802.3, reflected, init/xorout `$FFFFFFFF`; Py
 - **Entry crc32:** the CRC of the `length` stored bytes at the asset's offset.
 - **build_id:** the CRC of the TOC entries (`count × 16` bytes, not the header and not the TOC padding). Each entry holds its asset's place, length, flags, destination and CRC, so any change to an asset changes the ID, while padding and the DECB file system (including the loader, which embeds the ID) don't. The same inputs always give the same ID, and a project gives the same ID as a stream image or a disk image when the layout is the same.
 
-`dmpkg verify` checks the file size against `blocks` and `min_size`, recomputes every entry CRC, and recomputes `build_id`. On a disk image it also checks the size against the SDC's geometry rules, that no asset touches track 17, that the granule chains are sound, and that every granule holding header, TOC or asset bytes belongs to `DMPKG.DAT` and to no other file.
+`dmpkg verify` checks the file size against `blocks` and `min_size`, recomputes every entry CRC, and recomputes `build_id`. On a disk image it also checks the size against the SDC's geometry rules, that no asset touches track 17, that the granule chains are sound, and that every granule holding header, TOC or asset bytes belongs to the data file (`DMPKG.DAT`, or whichever file owns granule 0, where the header is) and to no other file.
 
 ## Mount name (not stored in the image)
 
@@ -106,7 +106,7 @@ A disk image is a standard single-sided DECB disk: 35 tracks of 18 sectors of 25
 
 The other 34 tracks are 68 granules of 9 sectors (2,304 bytes), two per track, numbered upward and skipping track 17: granule *g* starts at track `g/2` (plus one from track 17 on), sector `1 + 9·(g mod 2)`. An odd granule starts in the middle of a 512-byte block, which the descriptors' byte offset already handles.
 
-- **dmpkg data:** the header and TOC stay at block 0, inside granule 0. Every granule that holds header, TOC or asset bytes is chained, in ascending order, into one file, `DMPKG.DAT` (type 1 data, binary). Disk BASIC then counts those granules as used and never hands them to another file. The runtime ignores the FAT and reads by block and offset as usual.
+- **dmpkg data:** the header and TOC stay at block 0, inside granule 0. Every granule that holds header, TOC or asset bytes is chained, in ascending order, into one file, `DMPKG.DAT` by default or the name in `disk.data` (type 1 data, binary). Disk BASIC then counts those granules as used and never hands them to another file. The runtime ignores the FAT and reads by block and offset as usual.
 - **Track 17:** a stream runs straight through the file, so an asset that crossed track 17 would read directory sectors as data. Assets are placed in tracks 0–16 (blocks 1–152, up to byte 78,336) and from track 18 on (block 162, byte 82,944); first fit fills the space left before track 17 with later assets that fit.
 - **Past track 34:** assets that don't fit carry on past the disk area (block 315, byte 161,280). Disk BASIC never sees that part.
 - **Files:** the loader (`disk.loader`, a LOADM file, type 2 binary) and the optional `AUTOEXEC.BAS` (type 0, ASCII: `10 LOADM"LOADER.BIN":EXEC`) go into the granules left after the assets, lowest first. The directory lists `DMPKG.DAT`, the loader, then `AUTOEXEC.BAS`.
