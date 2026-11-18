@@ -125,6 +125,7 @@ DMPKG_TIMEOUT   equ     16
 DMPKG_MINVER    equ     $0117
         endc
 
+; CoCo SDC registers
 SDC_LATCH       equ     $FF40           ; control latch (write)
 SDC_FDATA       equ     $FF42           ; Flash data register (write)
 SDC_FCTL        equ     $FF43           ; Flash control register (bank)
@@ -132,12 +133,14 @@ SDC_STAT        equ     $FF48           ; command (write) / status (read)
 SDC_P1          equ     $FF49           ; parameter 1 / block high byte
 SDC_DATA        equ     $FF4A           ; parameter 2/3, data port ($FF4A,$FF4B)
 
+; CoCo SDC commands: SDC_CMDMODE goes to SDC_LATCH, the others to SDC_STAT
 SDC_CMDMODE     equ     $43
 SDC_C_MOUNT     equ     $E0+DMPKG_DRIVE
 SDC_C_STREAM    equ     $90+DMPKG_DRIVE
 SDC_C_ABORT     equ     $D0
 SDC_C_QUERY     equ     $C0
 
+; CoCo SDC status bits, read from SDC_STAT
 SDC_BUSY        equ     %00000001
 SDC_READY       equ     %00000010
 SDC_ERROR       equ     %00001000       ; set when a stream ends on an error
@@ -754,6 +757,7 @@ dmpkg_copy
         sta     dmpkg_n
         beq     @w2
         leau    16,u                    ; mid-group: offsets -16..14 fit 5 bits
+; @w32: copy 32 bytes per pass, 16 x (ldd ,x / std n,u), then the next group
 @w32    ldd     ,x
         std     -16,u
         ldd     ,x
