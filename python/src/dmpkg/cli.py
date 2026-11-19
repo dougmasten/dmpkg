@@ -18,14 +18,14 @@ from . import __version__
 from .decb import DIR_HI, DIR_LO, DISK_BYTES, HD_MIN, SS_MAX, gran_of, read_disk
 from .errors import PackError
 from .image import (BLOCK, F_DECB, F_PHYS, H_DISK, HDR_SIZE, MIN_IMAGE, TOC_ENTRY,
-                    read_image)
+                    read_image, toc_size)
 from .pack import build
 
 
 def cmd_list(path):
     img, h, ents = read_image(path)
-    print(f"{h['name']}  v{h['version']}  build ${h['build_id']:08X}  "
-          f"{h['blocks']} blocks  TOC {h['toc_blocks']}"
+    print(f"{h['name']}  build ${h['build_id']:08X}  "
+          f"{h['blocks']} blocks  TOC {toc_size(h['count'])[1]}"
           + ("  DECB disk" if h["flags"] & H_DISK else ""))
     if h["flags"] & H_DISK:
         for f, grans in read_disk(img):
@@ -85,8 +85,8 @@ def verify_disk(img: bytes, h: dict, ents: list) -> bool:
     if data is None:
         print("granule 0 (header) not owned by any file")
         return False
-    runs = [(0, h["toc_blocks"] * BLOCK)] + [(e["block"] * BLOCK + e["off"], e["length"])
-                                              for e in ents]
+    runs = [(0, toc_size(h["count"])[1] * BLOCK)] + [
+        (e["block"] * BLOCK + e["off"], e["length"]) for e in ents]
     for i, (pos, n) in enumerate(runs):
         stop = min(pos + n, DISK_BYTES)
         if pos >= stop:

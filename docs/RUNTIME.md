@@ -1,6 +1,6 @@
 # dmpkg runtime (`asm/dmpkg.asm`)
 
-The 6809 runtime a program assembles in to load assets from a dmpkg image through the CoCo SDC `STREAM` command. It's 963 bytes, plain 6809, and assembles unchanged with `--6309`. Include it with the two files `dmpkg build` writes (see [MANIFEST.md](MANIFEST.md#symbols) for the symbols they define):
+The 6809 runtime a program assembles in to load assets from a dmpkg image through the CoCo SDC `STREAM` command. It's 957 bytes, plain 6809, and assembles unchanged with `--6309`. Include it with the two files `dmpkg build` writes (see [MANIFEST.md](MANIFEST.md#symbols) for the symbols they define):
 
 ```asm
         ldx     #DMPKG_MountName    ; from assettab.asm (0 on a disk image: no mount)

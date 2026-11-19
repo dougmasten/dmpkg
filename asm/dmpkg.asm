@@ -255,7 +255,7 @@ dmpkg_version
 ; Description : Checks a CoCo SDC is present and its firmware supports STREAM
 ;             : (VERSION >= DMPKG_MINVER), mounts the image (unless X = 0),
 ;             : starts a stream at block 0 and compares the header's build_id
-;             : (bytes 8-11) so a stale image is caught.
+;             : (bytes 4-7) so a stale image is caught.
 ;------------------------------------------------------------------------------
 dmpkg_open
         pshs    b,x,y,u
@@ -305,17 +305,15 @@ dmpkg_open
         bcs     @err
         ldy     3,s                     ; expected build_id pointer (saved Y)
         beq     @ok
-        ldd     SDC_DATA                ; drop header bytes 0-7
+        ldd     SDC_DATA                ; drop header bytes 0-3 (magic)
         ldd     SDC_DATA                ;  "     "      "    "
-        ldd     SDC_DATA                ;  "     "      "    "
-        ldd     SDC_DATA                ;  "     "      "    "
-        ldd     SDC_DATA                ; bytes 8-11: build_id
+        ldd     SDC_DATA                ; bytes 4-7: build_id
         cmpd    ,y
         bne     @ehdr                   ; fail build_id check
         ldd     SDC_DATA
         cmpd    2,y
         bne     @ehdr                   ; fail build_id check
-        ldd     #12                     ; stream position after the build_id
+        ldd     #8                      ; stream position after the build_id
         std     dmpkg_off
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    b,x,y,u,pc

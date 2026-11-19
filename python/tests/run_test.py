@@ -703,7 +703,7 @@ def run_all(ex, src):
     chk([(a.block, a.off) for a in sres["assets"]] == [(a.block, a.off) for a in res["assets"]]
         and sres["build_id"] == res["build_id"],
         "stream image: same layout and build_id as the disk")
-    chk(len(simg) == image.MIN_IMAGE and simg[5] == 0, "stream image: 162 blocks, no disk flag")
+    chk(len(simg) == image.MIN_IMAGE and simg[13] == 0, "stream image: 162 blocks, no disk flag")
     prog, done = assemble(ex, build, "DMPKG_BuildID")
     m = Machine({"GAMES/DEMO.SDS": simg})
     m.run(prog, 0x1000, done)

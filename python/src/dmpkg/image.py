@@ -16,7 +16,6 @@ MIN_IMAGE = 0x14400          # smallest DSK that M: mounts, per the SDC User Gui
                              # (324 sectors = 82,944 bytes = 162 blocks)
 MAX_BLOCKS = 1 << 24         # 24-bit block number
 MAGIC = b"DMPK"
-VERSION = 1
 HDR_SIZE = 32
 TOC_ENTRY = 16
 
@@ -79,11 +78,10 @@ def build_id(toc_entries: bytes) -> int:
     return zlib.crc32(toc_entries)
 
 
-def header(name: str, count: int, build_id: int, blocks: int, toc_blocks: int,
-           disk: bool) -> bytes:
-    hdr = (MAGIC + bytes([VERSION, H_DISK if disk else 0])
-           + struct.pack(">H", count)
-           + struct.pack(">I", build_id) + blocks.to_bytes(3, "big") + bytes([toc_blocks])
+def header(name: str, count: int, build_id: int, blocks: int, disk: bool) -> bytes:
+    hdr = (MAGIC + struct.pack(">I", build_id)
+           + struct.pack(">H", count) + blocks.to_bytes(3, "big")
+           + bytes([H_DISK if disk else 0]) + bytes(2)                      # bytes 14-15 reserved
            + name.encode("ascii", "replace")[:16].ljust(16, b" "))
     assert len(hdr) == HDR_SIZE
     return hdr
@@ -95,9 +93,9 @@ def read_image(path: str):
         img = f.read()
     if len(img) < HDR_SIZE or img[:4] != MAGIC:
         raise PackError(f"{path}: not an dmpkg image")
-    ver, flags, count, bid = img[4], img[5], *struct.unpack_from(">HI", img, 6)
-    blocks = int.from_bytes(img[12:15], "big")
-    tocb = img[15]
+    bid, count = struct.unpack_from(">IH", img, 4)
+    flags = img[13]
+    blocks = int.from_bytes(img[10:13], "big")
     name = img[16:32].decode("ascii", "replace").rstrip()
     ents = []
     for i in range(count):
@@ -105,5 +103,5 @@ def read_image(path: str):
         ents.append(dict(block=int.from_bytes(e[0:3], "big"), off=int.from_bytes(e[3:5], "big"),
                          length=int.from_bytes(e[5:8], "big"), flags=e[8],
                          dest=int.from_bytes(e[9:12], "big"), crc=struct.unpack(">I", e[12:16])[0]))
-    return img, dict(version=ver, flags=flags, count=count, build_id=bid, blocks=blocks,
-                     toc_blocks=tocb, name=name), ents
+    return img, dict(flags=flags, count=count, build_id=bid, blocks=blocks,
+                     name=name), ents
