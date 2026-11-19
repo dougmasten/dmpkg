@@ -72,7 +72,7 @@ ASM_ORG ?= 0x2000
 
 asm: $(RUNTIME)
 	@mkdir -p $(OUT)
-	@printf ' org %s\n include "%s"\n' '$(ASM_ORG)' '$(CURDIR)/$(RUNTIME)' > $(OUT)/runtime.asm
+	@printf 'DMPKG_MAGIC equ $$444D504B\n org %s\n include "%s"\n' '$(ASM_ORG)' '$(CURDIR)/$(RUNTIME)' > $(OUT)/runtime.asm
 	$(LWASM) --6809 --format=raw -o $(OUT)/dmpkg.bin --list=$(OUT)/dmpkg.lst $(OUT)/runtime.asm
 	$(LWASM) --6309 --format=raw -o $(OUT)/dmpkg.6309.bin $(OUT)/runtime.asm
 	$(LWASM) --6809 --format=raw -DDMPKG_NOVERCHK -o $(OUT)/dmpkg.nover.bin $(OUT)/runtime.asm

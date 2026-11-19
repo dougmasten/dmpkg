@@ -1,6 +1,6 @@
 # dmpkg runtime (`asm/dmpkg.asm`)
 
-The 6809 runtime a program assembles in to load assets from a dmpkg image through the CoCo SDC `STREAM` command. It's 957 bytes, plain 6809, and assembles unchanged with `--6309`. Include it with the two files `dmpkg build` writes (see [MANIFEST.md](MANIFEST.md#symbols) for the symbols they define):
+The 6809 runtime a program assembles in to load assets from a dmpkg image through the CoCo SDC `STREAM` command. It's 969 bytes, plain 6809, and assembles unchanged with `--6309`. Include it with the two files `dmpkg build` writes (see [MANIFEST.md](MANIFEST.md#symbols) for the symbols they define):
 
 ```asm
         ldx     #DMPKG_MountName    ; from assettab.asm (0 on a disk image: no mount)
@@ -42,7 +42,7 @@ Every call returns carry clear on success. On failure it returns carry set and t
 | 1 | `DMPKG_ENODEV` | `dmpkg_init`, `dmpkg_open` | no CoCo SDC answered the presence check | no SDC plugged in, or the Multi-Pak switch is on another slot. Nothing was sent to the controller |
 | 2 | `DMPKG_EVER` | `dmpkg_open` | firmware is older than `DMPKG_MINVER` (117, the first with STREAM) | update the SDC firmware. `dmpkg_ver` holds the version it found (BCD), or 0 if the firmware predates the VERSION command (before 113) |
 | 3 | `DMPKG_EMOUNT` | `dmpkg_open` | the SDC couldn't mount the image (FAILED set after the name was sent) | the file isn't on the card at `sdc_path`, or the path or name is wrong. Check that the card has `GAMES/DEMO.SDS` (or your path) |
-| 4 | `DMPKG_EHDR` | `dmpkg_open` | the image's `build_id` doesn't match `DMPKG_BuildID` | stale image: the card and the program come from different builds. Copy the current image to the card, or reassemble against it |
+| 4 | `DMPKG_EHDR` | `dmpkg_open` | the image's magic isn't `DMPKG_MAGIC` (`DMPK`), or its `build_id` doesn't match `DMPKG_BuildID` | wrong file mounted, or a stale image: the card and the program come from different builds. Copy the current image to the card, or reassemble against it |
 | 5 | `DMPKG_EEOF` | `dmpkg_open`, `dmpkg_load`, `dmpkg_getbyte` | BUSY dropped while waiting for READY: the stream reached end of file before the data | the image is truncated or isn't the one the descriptors were built for. Usually only seen with `Y = 0`, where the stale-image check is skipped |
 | 6 | `DMPKG_ETIME` | any call | BUSY or READY didn't change within `DMPKG_TIMEOUT` × 65536 polls | no SDC answering (missing, or wrong Multi-Pak slot), or a stuck controller. Raise `DMPKG_TIMEOUT` only if a slow card really needs it |
 | 7 | `DMPKG_EFAIL` | `dmpkg_open`, `dmpkg_load`, `dmpkg_getbyte` | the controller reported an error: FAILED (status bit 7) set, or the stream ended (BUSY cleared) with status `$08` instead of `$00`. The firmware ends a failed stream with `$08` and doesn't set FAILED, contrary to the User Guide | SD card read error, card removed, or the controller rejected the command |
@@ -63,6 +63,6 @@ Every call returns carry clear on success. On failure it returns carry set and t
 
 ## Configuration
 
-Configure these before the include: `DMPKG_DRIVE` (0), `DMPKG_WINDOW` ($4000), `DMPKG_MMUREG` (from `DMPKG_WINDOW`), `DMPKG_MMU_HOME`, `DMPKG_DELAY` (12), `DMPKG_TIMEOUT` (16), `DMPKG_MINVER` ($0117), `DMPKG_NOVERCHK`. The runtime is plain 6809 and assembles unchanged with `--6309`.
+Configure these before the include: `DMPKG_DRIVE` (0), `DMPKG_WINDOW` ($4000), `DMPKG_MMUREG` (from `DMPKG_WINDOW`), `DMPKG_MMU_HOME`, `DMPKG_DELAY` (12), `DMPKG_TIMEOUT` (16), `DMPKG_MINVER` ($0117), `DMPKG_NOVERCHK`. The runtime is plain 6809 and assembles unchanged with `--6309`. It uses `DMPKG_MAGIC` from `assets.inc`. If you assemble it without an unprefixed `assets.inc`, define it yourself: `DMPKG_MAGIC equ $444D504B`.
 
 On a disk image, mask interrupts before `dmpkg_open`; see [DISK.md](DISK.md#interrupts).

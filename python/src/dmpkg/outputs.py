@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 
 from .decb import GRANULES
-from .image import BLOCK, Asset
+from .image import BLOCK, MAGIC, Asset
 from .manifest import Project
 
 
@@ -21,6 +21,7 @@ def equates(project: Project, assets: list[Asset], build_id: int, blocks: int) -
     where = f"mount 'M:{project.mount}'" if project.mount else "DECB disk, already mounted"
     eq = [_generated(project), "",
           f"; Image {os.path.basename(project.image)}  {where}",
+          f"{P}DMPKG_MAGIC         equ     ${int.from_bytes(MAGIC, 'big'):08X}   ; '{MAGIC.decode()}'",
           f"{P}DMPKG_BUILD_ID      equ     ${build_id:08X}",
           f"{P}DMPKG_IMAGE_BLOCKS  equ     ${blocks:06X}",
           f"{P}DMPKG_ASSET_COUNT   equ     {len(assets)}",
@@ -50,7 +51,7 @@ def table(project: Project, assets: list[Asset], build_id: int) -> list[str]:
           ";   flags: $80 phys (CoCo 3 MMU load)  $40 decb records",
           *([f"{P}DMPKG_MountName", f"        fcn     'M:{mount}'"] if mount else
             [f"{P}DMPKG_MountName   equ     0       ; no mount: the disk is already in DMPKG_DRIVE"]),
-          "", f"{P}DMPKG_BuildID     ; header build_id (bytes 8-11), checked by dmpkg_open"]
+          "", f"{P}DMPKG_BuildID     ; header build_id (bytes 4-7), checked by dmpkg_open"]
     tb.append(f"        fqb     ${build_id:08X}")
     tb += ["", "; asset descriptors, in manifest order: ldx #NAME / jsr dmpkg_load"]
     lw = max(8, max(len(P + a.name) for a in assets) + 1)   # opcode column: 8, or past the longest name

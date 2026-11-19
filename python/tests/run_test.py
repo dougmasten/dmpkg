@@ -436,6 +436,7 @@ start
         jsr     dmpkg_close
         bra     done
 
+DMPKG_MAGIC equ $444D504B       no assets.inc here
         include "dmpkg.asm"
 """
 
@@ -652,6 +653,11 @@ def run_all(ex, src):
     m = Machine(files_on_card, mounted="DEMO.DSK")
     m.run(bprog, 0x1000, bdone)
     chk(m.peek(0x100, 1)[0] == EHDR, "wrong build_id -> DMPKG_EHDR")
+
+    # ---- run 2b: right build_id, wrong magic: not a dmpkg image
+    m = Machine({"DEMO.DSK": b"XMPK" + img[4:]}, mounted="DEMO.DSK")
+    m.run(prog, 0x1000, done)
+    chk(m.peek(0x100, 1)[0] == EHDR, "wrong magic -> DMPKG_EHDR")
 
     # ---- run 3: card hangs part way through TITLE (phys load): READY never
     # comes, so dmpkg_waitready times out. DMPKG_TIMEOUT=1 (65536 polls) keeps

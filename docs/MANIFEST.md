@@ -154,6 +154,7 @@ and once per image:
 |---|---|---|
 | `DMPKG_MountName` | table | mount string (`fcn 'M:…'`), or `equ 0` for a disk image with no `sdc_path` |
 | `DMPKG_BuildID` | table | the image's 4-byte build_id, for `dmpkg_open` to check |
+| `DMPKG_MAGIC` | equates | the image magic, `$444D504B` (`DMPK`, header bytes 0-3) |
 | `DMPKG_BUILD_ID` | equates | the same build_id as a number |
 | `DMPKG_IMAGE_BLOCKS` | equates | image size in 512-byte blocks |
 | `DMPKG_ASSET_COUNT` | equates | number of assets |
