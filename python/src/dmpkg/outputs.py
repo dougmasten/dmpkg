@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 
-from .decb import GRANULES
+from .decb import DIR_TRACK, GRANULES
 from .image import BLOCK, MAGIC, Asset
 from .manifest import Project
 
@@ -73,6 +73,11 @@ def report(project: Project, assets: list[Asset], build_id: int, size: int, end:
         free = GRANULES - sum(n for _, n in disk_files)
         lines.append("  disk    " + ", ".join(f"{f} {n}" for f, n in disk_files)
                      + f" granule(s), {free} free")
+        r = project.reserve                     # granules just below track 17
+        last = DIR_TRACK * 2 - 1                # granule 33: the last before track 17
+        where = f" ({last - r + 1}-{last})" if r > 1 else f" ({last})"
+        lines.append(f"  reserve {r} granule(s)" + (
+            f" kept free before track 17{where} for the loader and AUTOEXEC.BAS" if r else ""))
     lines.append("")
     head = ("idx", "name", "block", "off", "length", "dest", "addr", "type")
     right = (True, False, True, True, True, False, True, False)   # numbers right-aligned

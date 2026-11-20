@@ -19,6 +19,7 @@ cd example
 make                                # assets, include files, loader, then build/DEMO.DSK
 make verify                         # or: dmpkg verify build/DEMO.DSK
 make list                           # or: dmpkg list build/DEMO.DSK
+dmpkg list --map build/DEMO.DSK --names build/DEMO.map   # track-by-track disk map
 ```
 
 `example/Makefile` runs the steps of a [two-pass build](docs/DISK.md#two-pass-build): `mkassets.py` writes the example's assets (random filler, fixed seed), `dmpkg build` writes the include files, lwasm assembles `loader.asm` against them, and a second `dmpkg build` puts the loader on the disk. It runs the package straight from `python/src/`, so it works without installing.

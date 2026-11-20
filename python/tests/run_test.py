@@ -55,6 +55,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))      # repo root: python/tests -> 
 try:
     from dmpkg import basic, decb, image, pack  # noqa: E402
     from dmpkg.cli import cmd_verify  # noqa: E402
+    from dmpkg.cli import main as cli_main  # noqa: E402
     from dmpkg.errors import PackError  # noqa: E402
 except ImportError:
     sys.exit("run_test: can't import dmpkg: pip install -e python or set "
@@ -717,6 +718,25 @@ def run_all(ex, src):
     chk(files["LOADER.BIN"] == (2, 0x00, loader), "LOADER.BIN reads back intact (ML, binary)")
     chk(files["AUTOEXEC.BAS"] == (0, 0x00, AUTOEXEC_TOK),
         'AUTOEXEC.BAS is 10 LOADM"LOADER.BIN":EXEC, tokenized')
+    # dmpkg list --map: track-by-track granule owners and assets
+    rep = os.path.join(os.path.dirname(man), "build", "DEMO.map")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = cli_main(["list", "--map", res["image"], "--names", rep])
+    lines = out.getvalue().splitlines()
+    row = {int(ln.split()[0]): ln for ln in lines if ln[:5].strip().isdigit()}
+    chk(rc == 0 and row[0].split()[1:3] == ["0:DMPKG.DAT", "1:DMPKG.DAT"]
+        and "header+TOC, FONT, PALETTE" in row[0] and "directory and FAT" in row[17]
+        and any("LOADER.BIN" in r for r in row.values())
+        and any("AUTOEXEC.BAS" in r for r in row.values()) and len(row) == 35,
+        "dmpkg list --map: 35 tracks, granule owners, assets by name, track 17")
+    flat = bytearray(img)
+    flat[13] &= ~image.H_DISK & 0xFF                 # header flags: not a disk
+    sds = os.path.join(build, "FLAT.SDS")
+    with open(sds, "wb") as f:
+        f.write(flat)
+    with contextlib.redirect_stderr(io.StringIO()):
+        chk(cli_main(["list", "--map", sds]) == 1, "dmpkg list --map on a stream image: error")
 
     # the loader, read off the disk and run as LOADM would: no mount, every
     # asset streamed from the image it came from
@@ -936,6 +956,16 @@ def disk_layout_test():
         results.append(check(pos == {"LOW": decb.DIR_HI, "FILL": decb.DIR_HI + decb.DIR_LO - 512}
                              and "TINY.BIN" in files and "AUTOEXEC.BAS" in files,
                              f"reserve: 2 leaves room for the loader {pos}"))
+        doc["project"]["map"] = "R.map"
+        with open(man, "w") as f:
+            yaml.safe_dump(doc, f)
+        pack.build(man)
+        with open(os.path.join(os.path.dirname(man), "R.map")) as f:
+            rline = [ln.strip() for ln in f if ln.startswith("  reserve")]
+        del doc["project"]["map"]
+        results.append(check(rline == ["reserve 2 granule(s) kept free before track 17 (32-33) "
+                                       "for the loader and AUTOEXEC.BAS"],
+                             f"the map report shows disk.reserve {rline}"))
         doc["project"]["disk"]["reserve"] = 34
         with open(man, "w") as f:
             yaml.safe_dump(doc, f)

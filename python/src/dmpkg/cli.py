@@ -3,7 +3,7 @@ dmpkg - project disc packer for the CoCo SDC STREAM protocol.
 
 Usage:
   dmpkg build project.yaml [-v]
-  dmpkg list  IMAGE
+  dmpkg list  IMAGE [--map [--names REPORT]]
   dmpkg verify IMAGE
   dmpkg tokenize PROGRAM.TXT OUT.BAS [--base ADDR]
   dmpkg detokenize PROGRAM.BAS [OUT.TXT]
@@ -17,7 +17,8 @@ import sys
 import zlib
 
 from . import __version__
-from .decb import DIR_HI, DIR_LO, DISK_BYTES, HD_MIN, SS_MAX, gran_of, read_disk
+from .decb import (DIR_HI, DIR_LO, DIR_TRACK, DISK_BYTES, GRAN_BYTES, GRANULES, HD_MIN,
+                   SS_MAX, TRACK_BYTES, gran_of, read_disk)
 from .errors import PackError
 from .image import (BLOCK, F_DECB, F_PHYS, H_DISK, HDR_SIZE, MIN_IMAGE, TOC_ENTRY,
                     read_image, toc_size)
@@ -25,8 +26,16 @@ from . import basic
 from .pack import build
 
 
-def cmd_list(path):
+def cmd_list(path, show_map=False, names_from=None):
     img, h, ents = read_image(path)
+    if show_map:
+        if not h["flags"] & H_DISK:
+            raise PackError(f"{path} is a stream image, not a DECB disk: no disk map")
+        names = report_names(names_from) if names_from else []
+        print(f"{h['name']}  build ${h['build_id']:08X}  {path}")
+        print()
+        print("\n".join(disk_map(img, h, ents, names)))
+        return
     print(f"{h['name']}  build ${h['build_id']:08X}  "
           f"{h['blocks']} blocks  TOC {toc_size(h['count'])[1]}"
           + ("  DECB disk" if h["flags"] & H_DISK else ""))
@@ -41,6 +50,49 @@ def cmd_list(path):
     for i, (e, fl) in enumerate(zip(ents, names)):
         print(f"  {i:>3} {e['block']:>7} {e['off']:>5} {e['length']:>8}  "
               f"${e['dest']:06X}  {fl:<{fw}}  ${e['crc']:08X}")
+
+
+def report_names(path) -> list[str]:
+    """Asset names, in TOC order, from a build's map report."""
+    names = []
+    with open(path) as f:
+        for line in f:
+            p = line.split()
+            if len(p) >= 3 and p[0].isdigit() and p[2].isdigit() and int(p[0]) == len(names):
+                names.append(p[1])
+    return names
+
+
+def disk_map(img: bytes, h: dict, ents: list, names: list[str]) -> list[str]:
+    """Track by track: each granule's DECB file, and the assets with bytes
+    on the track; then the assets past track 34."""
+    owner = {g: f for f, grans in read_disk(img) for g in grans}
+    label = [names[i] if i < len(names) else f"#{i}" for i in range(len(ents))]
+    spans = [(0, toc_size(h["count"])[1] * BLOCK, "header+TOC")] + [
+        (e["block"] * BLOCK + e["off"], e["length"], label[i]) for i, e in enumerate(ents)]
+    fw = max([12] + [len(f) for f in owner.values()])
+    out = [f"{'track':>5}  {'granules':<{2 * fw + 7}}  data"]
+    g = 0
+    for t in range(DISK_BYTES // TRACK_BYTES):
+        lo, hi = t * TRACK_BYTES, (t + 1) * TRACK_BYTES
+        if t == DIR_TRACK:
+            out.append(f"{t:>5}  [ directory and FAT ]")
+            continue
+        cells = []
+        for gi in (g, g + 1):
+            cells.append(f"{gi:>2}:{owner.get(gi, '-'):<{fw}}")
+        g += 2
+        on = [n for pos, ln, n in spans if ln and pos < hi and pos + ln > lo]
+        out.append(f"{t:>5}  {cells[0]} {cells[1]}  {', '.join(on)}".rstrip())
+    past = [n for pos, ln, n in spans if pos + ln > DISK_BYTES]
+    used = max(pos + ln for pos, ln, _ in spans)
+    free = GRANULES - len(owner)
+    out.append("")
+    out.append(f"{free} granule(s) free ({GRAN_BYTES} bytes each)")
+    if past:
+        out.append(f"past track 34 (Disk BASIC never looks): {', '.join(past)}")
+    out.append(f"data ends at byte {used}; the file is {len(img)} bytes")
+    return out
 
 
 def cmd_verify(path) -> bool:
@@ -115,7 +167,13 @@ def main(argv=None):
     b.add_argument("-v", "--verbose", action="store_true")
     b.add_argument("--no-loader", action="store_true",
                    help="leave the disk's loader off (first pass of a two-pass build)")
-    sub.add_parser("list", help="show an image's TOC").add_argument("image")
+    li = sub.add_parser("list", help="show an image's TOC (or, with --map, a disk map)")
+    li.add_argument("image")
+    li.add_argument("--map", action="store_true",
+                    help="track-by-track map of a disk image: granule owners, assets")
+    li.add_argument("--names", metavar="REPORT",
+                    help="label assets with the names in a build's map report "
+                         "(default: #index)")
     sub.add_parser("verify", help="check an image's CRCs").add_argument("image")
     t = sub.add_parser("tokenize", help="ASCII BASIC program -> tokenized .BAS file")
     t.add_argument("source")
@@ -130,7 +188,7 @@ def main(argv=None):
         if args.cmd == "build":
             build(args.manifest, args.verbose, loader=not args.no_loader)
         elif args.cmd == "list":
-            cmd_list(args.image)
+            cmd_list(args.image, args.map, args.names)
         elif args.cmd == "tokenize":
             with open(args.source, encoding="latin-1") as f:
                 prog = basic.tokenize(f.read(), args.base)

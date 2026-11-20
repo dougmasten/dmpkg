@@ -21,6 +21,23 @@ dmpkg build project.yaml               # pass 2: same layout, loader on the disk
 
 Asset placement and `build_id` don't depend on the loader, so pass 2 writes the same include files. `example/Makefile` does this for the example, whose `example/loader.asm` loads every asset and returns to BASIC.
 
+## Disk map
+
+`dmpkg list --map IMAGE` shows a disk image track by track: the DECB file that owns each granule, and the assets with bytes on each track, then what's past track 34 and how many granules are free. The image doesn't store asset names, so assets show as `#index` (their place in the TOC) unless `--names` points at the build's map report:
+
+```
+$ dmpkg list --map build/DEMO.DSK --names build/DEMO.map
+Demo  build $6A821BD0  build/DEMO.DSK
+
+track  granules                         data
+    0   0:DMPKG.DAT     1:DMPKG.DAT     header+TOC, FONT, PALETTE, LEVEL1, MAP
+    ...
+   17  [ directory and FAT ]
+    ...
+```
+
+It's a quick way to see whether a disk's assets are in load order (no stream restarts) and where the loader and `AUTOEXEC.BAS` went.
+
 ## Interrupts
 
 Mask IRQ and FIRQ (`orcc #$50`) before `dmpkg_open`. After `LOADM`, Disk BASIC's 60 Hz interrupt counts down the drive-motor timer and writes `$FF40` when it runs out, which would take the SDC out of command mode in the middle of a stream.
