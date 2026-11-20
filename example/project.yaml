@@ -1,11 +1,11 @@
 # dmpkg project manifest
 
 project:
-  title: Demo
+  title: Demo                  # in the image header (16 chars), shown by dmpkg list
   image: build/DEMO.DSK        # one file: copy to the SD card, DRIVE 0,"DEMO.DSK"
   equates: build/assets.inc    # EQUs only
   table: build/assettab.asm    # mount name, build_id, descriptors
-  map: build/DEMO.map
+  map: build/DEMO.map          # layout report: size, assets, disk map (optional)
   disk:                        # the image is also a DECB disk holding the loader
     loader: build/LOADER.BIN   # assembled from loader.asm against the files above
     autoexec: true             # AUTOEXEC.BAS: LOADM"LOADER.BIN":EXEC
