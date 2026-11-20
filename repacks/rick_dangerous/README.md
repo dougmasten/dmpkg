@@ -1,8 +1,8 @@
 # Rick Dangerous on one dmpkg disk
 
-`build/RICK.DSK` replaces the three original disks: one 805 KB image for the CoCo SDC. Mount it in drive 0 (`DRIVE 0,"RICK.DSK"`). `AUTOEXEC.BAS` runs `RICK.BIN`, which asks for the monitor type like the original `RICK.BAS` (`C` composite, `R` RGB) and then streams the whole game into RAM with dmpkg while the splash screen is up. There's no decompressing and no disk swapping.
-
 The CoCo 3 version of Rick Dangerous is by Glen Hewlett ([github.com/nowhereman999](https://github.com/nowhereman999)); the game's own repository is [Rick_Dangerous_CoCo_3](https://github.com/nowhereman999/Rick_Dangerous_CoCo_3). This repack only changes how it loads.
+
+`build/RICK.DSK` replaces the three original disks: one 805 KB image for the CoCo SDC. Mount it in drive 0 (`DRIVE 0,"RICK.DSK"`). `AUTOEXEC.BAS` runs `RICK.BIN`, which asks for the monitor type like the original `RICK.BAS` (`C` composite, `R` RGB) and then streams the whole game into RAM with dmpkg while the splash screen is up. There's no decompressing and no disk swapping.
 
 It needs the same machine as the original (CoCo 3, 2 MB, H6309), plus a CoCo SDC with firmware 117 or later. `DIR` shows `RICK.DAT` (the game data, which BASIC must leave alone), `RICK.BIN` and `AUTOEXEC.BAS`.
 
