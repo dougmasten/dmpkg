@@ -1,6 +1,6 @@
 # Game repacks
 
-Commercial CoCo games rebuilt as one dmpkg disk image each: the original disks go in, a single `.DSK` comes out, and its loader streams the whole game from the CoCo SDC with no disk swapping.
+CoCo games rebuilt as one dmpkg disk image each: the original disks go in, a single `.DSK` comes out, and its loader streams the whole game from the CoCo SDC with no disk swapping.
 
 Each folder builds from the game's original disks in its `bin/`. Those disks, and everything extracted or built from them, are git-ignored: only the scripts and loader are the repack.
 
