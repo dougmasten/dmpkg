@@ -42,7 +42,7 @@ def build(manifest_path: str, verbose=False, loader=True) -> dict:
         if project.loader:
             files.append(project.loader)
             if project.autoexec:
-                files.append(decb.autoexec(*project.loader[:2]))
+                files.append(decb.autoexec(*project.loader[:2], project.tokenize))
         disk_files = decb.write_disk(img, used, files, project.data)
 
     # ---- write it all

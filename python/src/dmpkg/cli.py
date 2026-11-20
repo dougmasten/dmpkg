@@ -5,6 +5,8 @@ Usage:
   dmpkg build project.yaml [-v]
   dmpkg list  IMAGE
   dmpkg verify IMAGE
+  dmpkg tokenize PROGRAM.TXT OUT.BAS [--base ADDR]
+  dmpkg detokenize PROGRAM.BAS [OUT.TXT]
 
 (or python -m dmpkg ...)
 """
@@ -19,6 +21,7 @@ from .decb import DIR_HI, DIR_LO, DISK_BYTES, HD_MIN, SS_MAX, gran_of, read_disk
 from .errors import PackError
 from .image import (BLOCK, F_DECB, F_PHYS, H_DISK, HDR_SIZE, MIN_IMAGE, TOC_ENTRY,
                     read_image, toc_size)
+from . import basic
 from .pack import build
 
 
@@ -114,12 +117,33 @@ def main(argv=None):
                    help="leave the disk's loader off (first pass of a two-pass build)")
     sub.add_parser("list", help="show an image's TOC").add_argument("image")
     sub.add_parser("verify", help="check an image's CRCs").add_argument("image")
+    t = sub.add_parser("tokenize", help="ASCII BASIC program -> tokenized .BAS file")
+    t.add_argument("source")
+    t.add_argument("output")
+    t.add_argument("--base", type=lambda s: int(s, 0), default=basic.BASE,
+                   help="address the line links are made for (default 0x2601)")
+    d = sub.add_parser("detokenize", help="tokenized .BAS file -> ASCII listing")
+    d.add_argument("program")
+    d.add_argument("output", nargs="?", help="default: print it")
     args = ap.parse_args(argv)
     try:
         if args.cmd == "build":
             build(args.manifest, args.verbose, loader=not args.no_loader)
         elif args.cmd == "list":
             cmd_list(args.image)
+        elif args.cmd == "tokenize":
+            with open(args.source, encoding="latin-1") as f:
+                prog = basic.tokenize(f.read(), args.base)
+            with open(args.output, "wb") as f:
+                f.write(prog)
+        elif args.cmd == "detokenize":
+            with open(args.program, "rb") as f:
+                text = basic.detokenize(f.read())
+            if args.output:
+                with open(args.output, "w", encoding="latin-1") as f:
+                    f.write(text)
+            else:
+                sys.stdout.write(text)
         else:
             return 0 if cmd_verify(args.image) else 1
     except PackError as e:

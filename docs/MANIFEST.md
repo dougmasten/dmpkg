@@ -38,6 +38,7 @@ project:
   disk:                            # also make the image a DECB disk
     loader: build/LOADER.BIN       # LOADM file put on the disk
     autoexec: true                 # AUTOEXEC.BAS that runs it
+    tokenize: true                 # AUTOEXEC.BAS tokenized (false: ASCII)
     reserve: 0                     # granules kept free for those two
     data: DMPKG.DAT                # DECB file that owns the asset granules
 
@@ -87,7 +88,8 @@ Output folders (for `image`, `equates`, `table` and `map`) are created if they d
 | key | default | meaning |
 |---|---|---|
 | `loader` | none | LOADM (DECB binary) file to put on the disk, under its own file name. The name must be a valid DECB 8.3 name (letters, digits and `_$#!&@%^()'{}~-`); it's upper-cased on the disk. The file must be a well-formed LOADM file. |
-| `autoexec` | `true` with a `loader`, else `false` | Also write `AUTOEXEC.BAS` (ASCII BASIC: `10 LOADM"LOADER.BIN":EXEC`, with the loader's name), which SDC-DOS runs at power-on. Needs a `loader`. |
+| `autoexec` | `true` with a `loader`, else `false` | Also write `AUTOEXEC.BAS` (`10 LOADM"LOADER.BIN":EXEC`, with the loader's name), which SDC-DOS runs at power-on. Needs a `loader`. |
+| `tokenize` | `true` | Write `AUTOEXEC.BAS` as a tokenized BASIC program, as `SAVE` would. `false` writes the same line as ASCII (the directory's ASCII flag set), which Disk BASIC tokenizes as it loads it. Both run the same. |
 | `reserve` | `0` | Granules (2,304 bytes each) kept free just before track 17, so the loader and `AUTOEXEC.BAS` still fit when the assets would fill the disk. Placement only depends on the manifest, so both passes of a two-pass build get the same layout. A loader under 2,304 bytes plus `AUTOEXEC.BAS` needs `2`. |
 | `data` | `DMPKG.DAT` | Name of the DECB file that owns the granules holding the header, TOC and assets (what `DIR` shows). It must be a valid 8.3 name, and can't be the loader's name or `AUTOEXEC.BAS`. Only the directory entry changes: the layout and build_id stay the same. |
 
@@ -180,6 +182,7 @@ With `disk:` and no `sdc_path`, there's no mount name: `DMPKG_MountName` is 0, a
 - a number can't be read
 - `sdc_path`, the loader's name or `data` isn't a valid 8.3 name, or `data` is the loader's name or `AUTOEXEC.BAS`
 - `autoexec` is set without a `loader`, or the loader isn't a LOADM file
+- `autoexec` or `tokenize` isn't `true` or `false`
 - an asset lacks `name` or `file`, two names give the same symbol, or `type` is neither `raw` nor `decb`
 - a raw asset is empty, has both or neither of `load`/`phys`, or runs past `$FFFF` (`load`) or 2MB (`phys`)
 - a decb asset has `load` or `phys`, or its file is malformed

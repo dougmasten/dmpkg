@@ -23,6 +23,8 @@ make list                           # or: dmpkg list build/DEMO.DSK
 
 `example/Makefile` runs the steps of a [two-pass build](docs/DISK.md#two-pass-build): `mkassets.py` writes the example's assets (random filler, fixed seed), `dmpkg build` writes the include files, lwasm assembles `loader.asm` against them, and a second `dmpkg build` puts the loader on the disk. It runs the package straight from `python/src/`, so it works without installing.
 
+`dmpkg tokenize PROG.TXT PROG.BAS` turns an ASCII BASIC program into a tokenized one, the way the CoCo 3 ROM would, and `dmpkg detokenize PROG.BAS` lists one. See [docs/DISK.md](docs/DISK.md#basic-programs).
+
 ```asm
         ldx     #DMPKG_MountName    ; from assettab.asm (0 on a disk image: no mount)
         ldy     #DMPKG_BuildID      ; 0 to skip the stale-image check
@@ -50,6 +52,7 @@ python/         the packer, a Python project of its own
                 layout.py    first-fit placement and image size
                 image.py     header, TOC, descriptors, build_id, reading images
                 decb.py      LOADM files, 8.3 names, the DECB disk
+                basic.py     BASIC tokenizer and lister (the CoCo 3 ROM's rules)
                 outputs.py   equates, table and map text
                 cli.py       the dmpkg command (build, list, verify)
   tests/        end-to-end test of the packer and runtime (run_test.py)

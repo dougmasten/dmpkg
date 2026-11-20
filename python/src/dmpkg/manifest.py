@@ -17,7 +17,7 @@ from .image import MIN_IMAGE, Asset
 
 KNOWN_PROJECT = {"name", "image", "sdc_path", "equates", "table", "map", "prefix",
                  "min_size", "pad_byte", "disk"}
-KNOWN_DISK = {"loader", "autoexec", "reserve", "data"}
+KNOWN_DISK = {"loader", "autoexec", "tokenize", "reserve", "data"}
 KNOWN_ASSET = {"name", "file", "type", "load", "phys", "align"}
 
 
@@ -34,6 +34,7 @@ class Project:
     disk: bool                # the image is also a DECB disk
     loader: tuple | None      # (name, ext, bytes) of the LOADM file put on it
     autoexec: bool
+    tokenize: bool            # AUTOEXEC.BAS tokenized (else ASCII)
     reserve: int              # granules kept free for the loader and AUTOEXEC.BAS
     data: tuple               # (name, ext) of the file that owns the dmpkg data
     equates: str | None       # output paths, as the manifest gives them
@@ -147,7 +148,7 @@ def _project(path: str, proj: dict, with_loader: bool) -> Project:
     pad_byte = num(proj.get("pad_byte", 0 if disk is False else 0xFF),
                    "project.pad_byte") & 0xFF
 
-    loader, autoexec, reserve, data = None, False, 0, ("DMPKG", "DAT")
+    loader, autoexec, tokenize, reserve, data = None, False, True, 0, ("DMPKG", "DAT")
     if disk is not False:
         reserve = num(disk.get("reserve", 0), "project.disk.reserve")
         if "data" in disk:
@@ -163,6 +164,9 @@ def _project(path: str, proj: dict, with_loader: bool) -> Project:
             raise PackError("project.disk.autoexec must be true or false")
         if autoexec and "loader" not in disk:
             raise PackError("project.disk.autoexec needs a loader to run")
+        tokenize = disk.get("tokenize", True)
+        if not isinstance(tokenize, bool):
+            raise PackError("project.disk.tokenize must be true or false")
         taken = {decb.file_name(str(disk["loader"]), "")} if "loader" in disk else set()
         if autoexec:
             taken.add(("AUTOEXEC", "BAS"))
@@ -172,7 +176,7 @@ def _project(path: str, proj: dict, with_loader: bool) -> Project:
 
     return Project(path=path, base=base, name=name, image=image, mount=mount,
                    prefix=prefix, min_size=min_size, pad_byte=pad_byte,
-                   disk=disk is not False, loader=loader, autoexec=autoexec,
+                   disk=disk is not False, loader=loader, autoexec=autoexec, tokenize=tokenize,
                    reserve=reserve, data=data,
                    equates=proj.get("equates"), table=proj.get("table"),
                    map=proj.get("map"))

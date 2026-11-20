@@ -9,6 +9,7 @@ import os
 import re
 import struct
 
+from . import basic
 from .errors import PackError
 
 # DECB disk: 35 tracks x 18 sectors x 256 bytes, single sided. Track 17 holds
@@ -80,10 +81,13 @@ def file_name(path: str, what: str) -> tuple[str, str]:
     return base, ext
 
 
-def autoexec(name: str, ext: str) -> tuple[str, str, bytes]:
-    """AUTOEXEC.BAS (ASCII BASIC) that runs the LOADM file name.ext."""
+def autoexec(name: str, ext: str, tokenize: bool = True) -> tuple[str, str, bytes]:
+    """AUTOEXEC.BAS that runs the LOADM file name.ext: a tokenized program,
+    or with tokenize=False the same line as ASCII (Disk BASIC tokenizes it
+    when it loads it)."""
     run = name + ("." + ext if ext else "")
-    return "AUTOEXEC", "BAS", f'10 LOADM"{run}":EXEC\r'.encode()
+    line = f'10 LOADM"{run}":EXEC\r'
+    return "AUTOEXEC", "BAS", basic.tokenize(line) if tokenize else line.encode()
 
 
 # ---------------------------------------------------------------- the disk
@@ -139,8 +143,9 @@ def write_disk(img: bytearray, used: list, files: list, data=("DMPKG", "DAT")) -
         for i, g in enumerate(grans):
             part = data[i * GRAN_BYTES:(i + 1) * GRAN_BYTES]
             img[gran_offset(g):gran_offset(g) + len(part)] = part
-        basic = ext == "BAS"                    # ASCII BASIC program, else LOADM file
-        entries.append((name, ext, 0 if basic else 2, basic, grans[0],
+        prog = ext == "BAS"                     # BASIC program, else LOADM file;
+        ascii_ = prog and data[:1] != b"\xff"   # a tokenized one starts with $FF
+        entries.append((name, ext, 0 if prog else 2, ascii_, grans[0],
                         chain(grans, len(data) - (need - 1) * GRAN_BYTES)))
         out.append((name + ("." + ext if ext else ""), need))
 
