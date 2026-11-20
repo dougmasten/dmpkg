@@ -43,6 +43,7 @@ python/         the packer, a Python project of its own
 asm/            the 6809 runtime (dmpkg.asm)
 example/        example project: manifest, asset generator, loader, Makefile
 hwtest/         tests for a real CoCo SDC, a folder and Makefile each: main/, stress/
+repacks/        games rebuilt as one dmpkg disk each (scripts and loader only; the games aren't included)
 docs/           the documentation (below)
 Makefile        runs the tests across both parts (the example included)
 ```
