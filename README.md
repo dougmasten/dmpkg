@@ -62,10 +62,6 @@ Makefile        runs the tests across both parts (the example included)
 | [docs/TESTING.md](docs/TESTING.md) | the test suite, and what hasn't been tried on real hardware |
 | [docs/HWTEST.md](docs/HWTEST.md) | the hardware test: test disks to run on a real CoCo SDC |
 
-```sh
-make test                       # build + verify the example, assemble the runtime, run the test
-```
-
 ## License
 
 zlib; see [LICENSE](LICENSE). Programs that assemble in the runtime don't need to include the notice; it only has to stay in copies of the source.
