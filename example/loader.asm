@@ -18,6 +18,8 @@ start
         orcc    #$50            ; mask IRQ/FIRQ: Disk BASIC's motor-off
                                 ; timer writes $FF40, which would drop the
                                 ; SDC out of command mode mid-stream
+        jsr     dmpkg_init      ; once, at start: SDC there, firmware 117+
+        bcs     @done
         ldx     #DMPKG_MountName ; 0: use the disk already in DMPKG_DRIVE
         ldy     #DMPKG_BuildID
         jsr     dmpkg_open

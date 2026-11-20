@@ -29,22 +29,21 @@
 ; DMPKG_MAGIC from the equates file.
 ;
 ; Entry points
-;   dmpkg_init   Checks a CoCo SDC is present (DMPKG_ENODEV if not), then gets
-;                its firmware version like dmpkg_version. dmpkg_open calls it.
-;   dmpkg_version
-;                Enters command mode, returns D = firmware version in BCD
-;                (e.g. $0124 for 124), or D = 0 if the firmware predates the
-;                VERSION command (before 113). Also stored in dmpkg_ver.
-;                Ends a running stream.
+;   dmpkg_init   Checks a CoCo SDC is present (DMPKG_ENODEV if not), enters
+;                command mode (ending a running stream), gets its firmware
+;                version: D = BCD (e.g. $0124 for 124), also in dmpkg_ver (0
+;                if the firmware predates the VERSION command, before 113),
+;                and checks it's at least DMPKG_MINVER (DMPKG_EVER if not).
+;                Sets up the runtime's state: call it once, at start.
 ;   dmpkg_open   X = mount name ("M:..." zero-terminated, e.g. DMPKG_MountName),
 ;                    or 0 to use the image already in DMPKG_DRIVE (a dmpkg disk
 ;                    image the loader was run from)
 ;                Y = expected 4-byte build_id (DMPKG_BuildID) or 0 to skip
 ;                    the check
-;                Checks a CoCo SDC is present and its firmware supports STREAM
-;                (VERSION >= DMPKG_MINVER), mounts the image, starts a stream at
-;                block 0 and checks the header's magic (DMPKG_MAGIC) and build_id
-;                so a stale or wrong image is caught.
+;                Enters command mode (ending any running stream), mounts the
+;                image, starts a stream at block 0 and checks the header's
+;                magic (DMPKG_MAGIC) and build_id so a stale or wrong image is
+;                caught. Needs dmpkg_init first.
 ;   dmpkg_stop   ends a running stream ($D0), stays in command mode
 ;   dmpkg_close  dmpkg_stop, then puts the controller back in floppy
 ;                emulation mode (write 0 to $FF40)
@@ -67,7 +66,7 @@
 ;   DMPKG_EFAIL   7  controller reported an error (FAILED, or the stream ended
 ;                    with status $08: card error)
 ; On any error the stream is stopped. Registers other than A/CC are
-; preserved, except B for dmpkg_init and dmpkg_version (they return D) and U
+; preserved, except B for dmpkg_init (it returns D) and U
 ; for decb loads (exec address).
 ;
 ; Protocol (CoCo SDC user guide ch. 7, firmware with STREAM support):
@@ -93,8 +92,7 @@
 ;   DMPKG_DELAY    12     settle loop before polling READY (8 cyc/pass: ~54us at
 ;                         1.79MHz; the SDC needs ~20us to update READY; 1-65535)
 ;   DMPKG_TIMEOUT  16     poll timeout, units of 65536 polls (1-255)
-;   DMPKG_MINVER   $0117  lowest firmware dmpkg_open accepts (117 added STREAM)
-;   DMPKG_NOVERCHK        if defined, dmpkg_open skips the version check
+;   DMPKG_MINVER   $0117  lowest firmware dmpkg_init accepts (117 added STREAM)
 ;------------------------------------------------------------------------------
 
         ifndef  DMPKG_DRIVE
@@ -196,76 +194,73 @@ dest            rmb     3               ; CPU or physical address
 ; state
 dmpkg_blk       rmb     3       ; block holding the next stream byte
 dmpkg_off       rmb     2       ; offset of the next byte in that block
-dmpkg_live      fcb     0       ; nonzero while a stream is running
 dmpkg_poll      rmb     1       ; nonzero: wait READY before the next byte
 dmpkg_left      rmb     3       ; bytes still to copy (24-bit)
 dmpkg_chunk     rmb     2       ; bytes in the current copy chunk
 dmpkg_n         rmb     1       ; 32-byte groups left in the chunk
-dmpkg_phys      fcb     0       ; nonzero only during a phys copy
 dmpkg_mblk      rmb     1       ; block mapped in the window
 dmpkg_msave     rmb     1       ; window block before the load
 dmpkg_tmo       rmb     1       ; timeout outer counter
-dmpkg_ver       fdb     0       ; firmware version (BCD), set by dmpkg_version
+; set up by dmpkg_init: keep these three together
+dmpkg_live      rmb     1       ; nonzero while a stream is running
+dmpkg_phys      rmb     1       ; nonzero only during a phys copy
+dmpkg_ver       rmb     2       ; firmware version (BCD), set by dmpkg_init
 
 ;------------------------------------------------------------------------------
 ; Function    : dmpkg_init
 ; Entry       : none
 ; Exit        : CC.C clear: D = firmware version in BCD ($0124 = 124),
-;             :             0 if the firmware predates VERSION (before 113)
-;             : CC.C set  : A = DMPKG_ENODEV or DMPKG_ETIME
-; Destroys    : A, CC (B too when the SDC is found)
-; Calls       : dmpkg_version
+;             :             at least DMPKG_MINVER
+;             : CC.C set  : A = DMPKG_ENODEV, DMPKG_EVER or DMPKG_ETIME
+; Destroys    : A, B, CC
+; Calls       : dmpkg_cmdmode, dmpkg_waitidle
 ; Description : Checks a CoCo SDC is present, then gets its firmware version
-;             : (also kept in dmpkg_ver). The check writes the Flash data
-;             : register ($FF42) and reads the Flash control register
+;             : (also kept in dmpkg_ver) and checks it supports STREAM
+;             : (VERSION >= DMPKG_MINVER; firmware before 113 has no VERSION
+;             : command and counts as 0). The presence check writes the Flash
+;             : data register ($FF42) and reads the Flash control register
 ;             : ($FF43), whose bits 5-6 follow it on an SDC; without one, it
 ;             : returns DMPKG_ENODEV before any command is written. If found,
 ;             : the controller is left in command mode (dmpkg_close leaves it).
+;             : It also sets up the runtime's state (all rmb): call it once,
+;             : at start, before any other call.
 ;------------------------------------------------------------------------------
 dmpkg_init
+; initialize variables
+        clra                            ; no stream known to be running,
+        clrb
+        std     dmpkg_live              ; not in a phys copy (dmpkg_phys),
+        std     dmpkg_ver               ; no version yet
+; check if a CoCo SDC is present
         lda     #$64                    ; Flash data: bits 5-6 set
         sta     SDC_FDATA
         lda     SDC_FCTL
         clr     SDC_FDATA               ; Flash data: bits 5-6 clear
         eora    SDC_FCTL                ; bits that followed the data
         cmpa    #$60
-        beq     dmpkg_version           ; found: get the firmware version
-        lda     #DMPKG_ENODEV           ; ERROR CODE: no CoCo SDC
-        orcc    #1                      ; set carry (error)
-        rts
-
-;------------------------------------------------------------------------------
-; Function    : dmpkg_version
-; Entry       : none
-; Exit        : CC.C clear: D = firmware version in BCD ($0124 = 124),
-;             :             0 if the firmware predates VERSION (before 113)
-;             : CC.C set  : A = DMPKG_ETIME
-; Destroys    : A, B, CC
-; Calls       : dmpkg_stop, dmpkg_waitidle
-; Description : Ends any running stream, enters command mode and sends the
-;             : VERSION command ($C0, 'V' in $FF49). The result is also kept
-;             : in dmpkg_ver.
-;------------------------------------------------------------------------------
-dmpkg_version
-        jsr     dmpkg_stop
-        lda     #SDC_CMDMODE
-        sta     SDC_LATCH
-        jsr     dmpkg_waitidle
+        bne     @nosdc                  ; no CoCo SDC was found
+; get CoCo SDC version
+        jsr     dmpkg_cmdmode           ; enter command mode (end any running stream)
         bcs     @exit
         lda     #'V
         sta     SDC_P1
-        lda     #SDC_C_QUERY
+        lda     #SDC_C_QUERY            ; VERSION ($C0, 'V' in $FF49)
         sta     SDC_STAT
         jsr     dmpkg_waitidle
         bcs     @exit
-        ldd     #0
-        tst     SDC_STAT                ; FAILED: no VERSION command (< 113)
-        bmi     @set_ver
-        ldd     SDC_DATA
-@set_ver
+        tst     SDC_STAT                ; FAILED: no VERSION command (< 113),
+        bmi     @old                    ; dmpkg_ver stays 0
+        ldd     SDC_DATA                ; D = firmware version in BCD
         std     dmpkg_ver
-        andcc   #$fe                    ; clear carry (success)
+        cmpd    #DMPKG_MINVER
+        bhs     @exit                   ; new enough (carry clear)
+@old    lda     #DMPKG_EVER             ; ERROR CODE: firmware < 117
+        fcb     $8C                     ; skip 2 bytes
+@nosdc  lda     #DMPKG_ENODEV           ; ERROR CODE: no CoCo SDC
+@error  orcc    #1                      ; set carry (error)
 @exit   rts
+
+
 
 ;------------------------------------------------------------------------------
 ; Function    : dmpkg_open
@@ -275,36 +270,24 @@ dmpkg_version
 ; Exit        : CC.C clear: image mounted, stream parked after the build_id
 ;             : CC.C set  : A = error code (stream stopped)
 ; Destroys    : A, CC
-; Calls       : dmpkg_init (dmpkg_stop with DMPKG_NOVERCHK), dmpkg_waitidle,
+; Calls       : dmpkg_cmdmode, dmpkg_waitidle,
 ;             : dmpkg_waitready, dmpkg_start, dmpkg_fail
-; Description : Checks a CoCo SDC is present and its firmware supports STREAM
-;             : (VERSION >= DMPKG_MINVER), mounts the image (unless X = 0),
-;             : starts a stream at block 0 and compares the header's build_id
-;             : (bytes 4-7) so a stale image is caught.
+; Description : Enters command mode (ending any running stream), mounts the
+;             : image (unless X = 0), starts a stream at block 0 and compares
+;             : the header's build_id (bytes 4-7) so a stale image is caught.
+;             : dmpkg_init must have succeeded first (it checks the SDC and
+;             : its firmware, and sets up the state).
 ;------------------------------------------------------------------------------
 dmpkg_open
         pshs    b,x,y,u
-        ifdef   DMPKG_NOVERCHK
-        jsr     dmpkg_stop
-        lda     #SDC_CMDMODE
-        sta     SDC_LATCH
-        jsr     dmpkg_waitidle
-        bcs     @err
-        else
-        jsr     dmpkg_init              ; SDC present? stops any stream,
-        bcs     @err                    ; enters command mode
-        cmpd    #DMPKG_MINVER
-        bhs     @ver_ok
-        lda     #DMPKG_EVER             ; ERROR CODE: firmware < 117
-        bra     @err
-@ver_ok
-        endc
+        jsr     dmpkg_cmdmode           ; ends any stream, enters command mode
+        bcs     @error
         leax    ,x                      ; X = 0: no mount, the image is
         beq     @mount_ok               ; already in DMPKG_DRIVE
         lda     #SDC_C_MOUNT
         sta     SDC_STAT
         jsr     dmpkg_waitready
-        bcs     @err
+        bcs     @error
         clra                            ; A counts 256 bytes, 2 per pass
 @name_loop
         ldb     ,x                      ; name byte, or 0 padding once the
@@ -318,16 +301,16 @@ dmpkg_open
         adda    #2
         bne     @name_loop
         jsr     dmpkg_waitidle
-        bcs     @err
+        bcs     @error
         lda     SDC_STAT
         bpl     @mount_ok
         lda     #DMPKG_EMOUNT           ; ERROR CODE: file not found
-        bra     @err
+        bra     @error
 @mount_ok
         clra                            ; start stream at block 0
         ldu     #0
         jsr     dmpkg_start
-        bcs     @err
+        bcs     @error
         ldy     3,s                     ; expected build_id pointer (saved Y)
         beq     @ok
         ldd     SDC_DATA                ; bytes 0-3: magic
@@ -347,7 +330,7 @@ dmpkg_open
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    b,x,y,u,pc
 @ehdr   lda     #DMPKG_EHDR             ; ERROR CODE: wrong or stale image
-@err    jsr     dmpkg_fail
+@error  jsr     dmpkg_fail
         puls    b,x,y,u,pc
 
 ;------------------------------------------------------------------------------
@@ -428,7 +411,7 @@ dmpkg_load
         ldu     dmpkg_desc.blk+1,x
         jsr     dmpkg_start
         puls    u
-        lbcs    @err
+        lbcs    @error
         ldd     dmpkg_desc.off,x        ; skip to the asset's offset (0-511)
         beq     @here
         std     dmpkg_off               ; stream position once skipped
@@ -443,8 +426,8 @@ dmpkg_load
         bne     @skip_loop
 @skip_odd
         lda     dmpkg_desc.off+1,x
-        bita    #1
-        beq     @here
+        lsra                            ; bit 0 (odd offset) into carry
+        bcc     @here
         lda     SDC_DATA                ; odd: drop the pair's 1st byte, so
 @here                                   ; the next read is $FF4B
         lda     dmpkg_desc.flags,x
@@ -460,7 +443,7 @@ dmpkg_load
         ldu     dmpkg_desc.dest+1,x
         jsr     dmpkg_copy
         puls    u
-        bcs     @err
+        bcs     @error
         bra     @ok
 ; CoCo 3 physical load through the MMU window
 @phys   pshs    u
@@ -491,28 +474,28 @@ dmpkg_load
         clr     dmpkg_phys
         puls    a,cc
         puls    u
-        bcs     @err
+        bcs     @error
         bra     @ok
 ; decb records: [len.w addr.w data]... [0000 exec.w]
 @decb   clr     dmpkg_left
 @decb_loop
         jsr     dmpkg_getword           ; D = length
-        bcs     @err
+        bcs     @error
         std     dmpkg_left+1
         beq     @decb_end
         jsr     dmpkg_getword           ; D = load address
-        bcs     @err
+        bcs     @error
         tfr     d,u
         jsr     dmpkg_copy
-        bcs     @err
+        bcs     @error
         bra     @decb_loop
 @decb_end
         jsr     dmpkg_getword           ; exec address
-        bcs     @err
+        bcs     @error
         tfr     d,u
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    b,x,y,pc
-@err    jsr     dmpkg_fail
+@error  jsr     dmpkg_fail
         puls    b,x,y,pc
 
 ;------------------------------------------------------------------------------
@@ -547,6 +530,28 @@ dmpkg_start
 @exit   rts
 
 ;------------------------------------------------------------------------------
+; Function    : dmpkg_cmdmode
+; Entry       : none
+; Exit        : CC.C clear: in command mode, controller idle, no stream
+;             : CC.C set  : A = DMPKG_ETIME
+; Destroys    : A, CC
+; Calls       : dmpkg_settle, dmpkg_waitidle
+; Description : Enters command mode. A stream still running (BUSY set) is
+;             : aborted ($D0) by its BUSY bit, and dmpkg_live cleared.
+;------------------------------------------------------------------------------
+dmpkg_cmdmode
+        clr     dmpkg_live
+        lda     #SDC_CMDMODE
+        sta     SDC_LATCH
+        bsr     dmpkg_settle
+        lda     SDC_STAT
+        bita    #SDC_BUSY               ; a stream (or command) still running?
+        beq     @idle
+        lda     #SDC_C_ABORT
+        sta     SDC_STAT
+@idle   bra     dmpkg_waitidle
+
+;------------------------------------------------------------------------------
 ; Function    : dmpkg_settle
 ; Entry       : none
 ; Exit        : none
@@ -573,8 +578,8 @@ dmpkg_settle
 ;             : DMPKG_TIMEOUT x 65536 poll limit runs out.
 ;------------------------------------------------------------------------------
 dmpkg_waitidle
-        bsr     dmpkg_settle
         pshs    x
+        bsr     dmpkg_settle
         lda     #DMPKG_TIMEOUT
         sta     dmpkg_tmo
         ldx     #0
@@ -587,7 +592,7 @@ dmpkg_waitidle
         bne     @loop
         lda     #DMPKG_ETIME            ; ERROR CODE: BUSY timeout
         orcc    #1                      ; set carry (error)
-        puls    x,pc
+        fcb     $8C                     ; skip 2 bytes
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    x,pc
 
@@ -622,12 +627,12 @@ dmpkg_waitready
         lda     #DMPKG_ETIME            ; ERROR CODE: READY timeout
         fcb     $8C                     ; skip 2 bytes
 @fail   lda     #DMPKG_EFAIL            ; ERROR CODE: SDC reported FAILED
-@err    orcc    #1                      ; set carry (error)
+@error  orcc    #1                      ; set carry (error)
         puls    x,pc
 @eof    bita    #SDC_ERROR              ; firmware ends a failed stream with
         bne     @fail                   ; $08 (no FAILED bit), a clean one $00
         lda     #DMPKG_EEOF             ; ERROR CODE: end of file
-        bra     @err
+        bra     @error
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    x,pc
 
@@ -836,7 +841,8 @@ dmpkg_copy
         cmpd    #512
         bne     @set_off
         jsr     dmpkg_nextblk
-        ldd     #0
+        clra
+        clrb
 @set_off
         std     dmpkg_off
         jmp     @loop

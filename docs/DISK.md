@@ -40,7 +40,7 @@ It's a quick way to see whether a disk's assets are in load order (no stream res
 
 ## Interrupts
 
-Mask IRQ and FIRQ (`orcc #$50`) before `dmpkg_open`. After `LOADM`, Disk BASIC's 60 Hz interrupt counts down the drive-motor timer and writes `$FF40` when it runs out, which would take the SDC out of command mode in the middle of a stream.
+Mask IRQ and FIRQ (`orcc #$50`) before `dmpkg_init`. After `LOADM`, Disk BASIC's 60 Hz interrupt counts down the drive-motor timer and writes `$FF40` when it runs out, which would take the SDC out of command mode in the middle of a stream.
 
 ## BASIC programs
 

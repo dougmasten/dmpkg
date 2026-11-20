@@ -1,6 +1,6 @@
 # dmpkg — project disc packer for the CoCo SDC STREAM protocol
 
-`dmpkg` packs all of a project's assets into a single image on the SD card. A small 6809 runtime (`asm/dmpkg.asm`, 969 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
+`dmpkg` packs all of a project's assets into a single image on the SD card. A small 6809 runtime (`asm/dmpkg.asm`, 984 bytes) then loads any asset straight to its destination using the CoCo SDC `STREAM` command. That includes CoCo 3 physical RAM through an MMU window.
 
 The image can also be a DECB disk that holds your loader program, so the whole project is one `.DSK` file: mount it, run the loader (or let `AUTOEXEC.BAS` do it), and the loader streams the assets from that same file. See [docs/DISK.md](docs/DISK.md).
 
@@ -27,6 +27,8 @@ dmpkg list --map build/DEMO.DSK --names build/DEMO.map   # track-by-track disk m
 `dmpkg tokenize PROG.TXT PROG.BAS` turns an ASCII BASIC program into a tokenized one, the way the CoCo 3 ROM would, and `dmpkg detokenize PROG.BAS` lists one. See [docs/DISK.md](docs/DISK.md#basic-programs).
 
 ```asm
+        jsr     dmpkg_init          ; once, at start: SDC there, firmware 117+
+        bcs     error               ; A = error code
         ldx     #DMPKG_MountName    ; from assettab.asm (0 on a disk image: no mount)
         ldy     #DMPKG_BuildID      ; 0 to skip the stale-image check
         jsr     dmpkg_open

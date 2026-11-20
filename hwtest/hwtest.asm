@@ -71,7 +71,7 @@ start
         jsr     dmpkg_init
         bcc     @found
         ldx     #t_sdc
-        jsr     cell            ; E1: no SDC, E6: no answer
+        jsr     cell            ; E1: no SDC, E2: firmware < 117, E6: no answer
         lbra    finish
 @found  jsr     fmtver
         ldx     #vbuf

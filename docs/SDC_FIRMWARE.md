@@ -1,6 +1,6 @@
 # CoCo SDC firmware versions
 
-What each CoCo SDC MCU firmware version added, and which of those features dmpkg relies on. `dmpkg_version` returns the version in BCD, so 1.17 comes back as `$0117` (the version command answers `$01` in `$FF4A` and `$17` in `$FF4B`).
+What each CoCo SDC MCU firmware version added, and which of those features dmpkg relies on. `dmpkg_init` returns the version in BCD (and keeps it in `dmpkg_ver`), so 1.17 comes back as `$0117` (the version command answers `$01` in `$FF4A` and `$17` in `$FF4B`).
 
 The firmware entries come from the official `Changes.pdf` that ships with each firmware package. They're quoted closely, with notes from a disassembly of the MCU firmware where it shows more. SDC-DOS (the Disk BASIC in the controller's flash) has its own version numbers and is listed separately.
 
@@ -8,8 +8,8 @@ The firmware entries come from the official `Changes.pdf` that ships with each f
 
 | version | feature | used for |
 |---|---|---|
-| 1.17 | `STREAM` command (`$90`/`$91`) | everything `dmpkg_load` does. `dmpkg_open` refuses older firmware with `DMPKG_EVER` (`DMPKG_MINVER`, default `$0117`) |
-| before 1.17 | `VERSION` query (`$C0`, `$FF49` = `'V'`) | the firmware check. Firmware without it answers FAILED, and `dmpkg_version` returns 0. The runtime takes 1.13 as the first version with it; the official change list starts at 1.15, so that's unconfirmed |
+| 1.17 | `STREAM` command (`$90`/`$91`) | everything `dmpkg_load` does. `dmpkg_init` refuses older firmware with `DMPKG_EVER` (`DMPKG_MINVER`, default `$0117`) |
+| before 1.17 | `VERSION` query (`$C0`, `$FF49` = `'V'`) | the firmware check. Firmware without it answers FAILED, which `dmpkg_init` counts as version 0 (`DMPKG_EVER`). The runtime takes 1.13 as the first version with it; the official change list starts at 1.15, so that's unconfirmed |
 | SDC-DOS 1.3 | `AUTOEXEC.BAS` at power-on | starting the loader on a [disk image](DISK.md). Optional: without it, run the loader by hand |
 
 Two firmware behaviours that differ from the User Guide, both seen in the disassembly and handled by the runtime:

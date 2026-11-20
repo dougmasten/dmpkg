@@ -46,9 +46,7 @@ asm: $(RUNTIME)
 	@printf 'DMPKG_MAGIC equ $$444D504B\n org %s\n include "%s"\n' '$(ASM_ORG)' '$(CURDIR)/$(RUNTIME)' > $(OUT)/runtime.asm
 	$(LWASM) --6809 --format=raw -o $(OUT)/dmpkg.bin --list=$(OUT)/dmpkg.lst $(OUT)/runtime.asm
 	$(LWASM) --6309 --format=raw -o $(OUT)/dmpkg.6309.bin $(OUT)/runtime.asm
-	$(LWASM) --6809 --format=raw -DDMPKG_NOVERCHK -o $(OUT)/dmpkg.nover.bin $(OUT)/runtime.asm
-	@echo "runtime: $$(wc -c < $(OUT)/dmpkg.bin) bytes" \
-	      "($$(wc -c < $(OUT)/dmpkg.nover.bin) with DMPKG_NOVERCHK), assembled at" '$(ASM_ORG)'
+	@echo "runtime: $$(wc -c < $(OUT)/dmpkg.bin) bytes, assembled at" '$(ASM_ORG)'
 
 test: example asm hwtest
 	$(PYTHON) python/tests/run_test.py

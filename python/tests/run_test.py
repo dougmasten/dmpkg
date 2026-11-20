@@ -352,6 +352,8 @@ TEST_ASM = r"""
         bra     start
 done    bra     done                fixed at $1002 - harness stops here
 start
+        jsr     dmpkg_init          once, at start
+        lbcs    fail
         ldx     #DMPKG_MountName
         ldy     #{hdr}
         jsr     dmpkg_open
@@ -432,10 +434,10 @@ def disk_files(img):
     return out
 
 
-def assemble(src_dir, build_dir, hdr_label, defines=()):
+def assemble(src_dir, build_dir, hdr_label, defines=(), src=None):
     asm = os.path.join(build_dir, "test.asm")
     with open(asm, "w") as f:
-        f.write(TEST_ASM.replace("{hdr}", hdr_label))
+        f.write((src or TEST_ASM).replace("{hdr}", hdr_label))
     out = os.path.join(build_dir, "test.bin")
     lst = os.path.join(build_dir, "test.lst")
     subprocess.run([LWASM, "--6809", "--format=raw", "-o", out, f"--list={lst}",
@@ -534,6 +536,8 @@ start
         std     $0104               D = version, or A = error code
         tfr     cc,a
         sta     $0100               CC: carry in bit 0
+        ldd     dmpkg_ver
+        std     $0106
         jsr     dmpkg_close
         bra     done
 
@@ -543,19 +547,27 @@ DMPKG_MAGIC equ $444D504B       no assets.inc here
 
 
 def init_test():
-    """dmpkg_init: finds the SDC and returns its version in D (0 before 113),
-    or DMPKG_ENODEV without writing a command when nothing is there; dmpkg_open
-    on a machine with no SDC fails the same way."""
+    """dmpkg_init: finds the SDC and returns its version in D, DMPKG_EVER if
+    it's below 117 (dmpkg_ver holding it, 0 before 113), or DMPKG_ENODEV
+    without writing a command when nothing is there."""
     results = []
     with tempfile.TemporaryDirectory() as td:
         prog = lwasm_src(INIT_ASM, td)
-    for fw, want in ((0x0129, 0x0129), (0x0117, 0x0117), (0x0110, 0)):
+    for fw in (0x0129, 0x0117):
         m = Machine({}, firmware=fw)
         m.run(prog, 0x1000, 0x1002)
         cc, d = m.peek(0x100, 1)[0], int.from_bytes(m.peek(0x104, 2), "big")
-        results.append(check(not cc & 1 and d == want and not m.sdc.cmdmode,
+        results.append(check(not cc & 1 and d == fw and not m.sdc.cmdmode,
                              f"dmpkg_init, firmware {fw:X}: D=${d:04X}, carry {cc & 1}, "
                              "back in emulation mode after dmpkg_close"))
+    for fw, ver in ((0x0116, 0x0116), (0x0110, 0)):
+        m = Machine({}, firmware=fw)
+        m.run(prog, 0x1000, 0x1002)
+        cc, a = m.peek(0x100, 1)[0], m.peek(0x104, 1)[0]
+        v = int.from_bytes(m.peek(0x106, 2), "big")
+        results.append(check(cc & 1 and a == EVER and v == ver,
+                             f"dmpkg_init, firmware {fw:X} -> DMPKG_EVER (A=${a:02X}, "
+                             f"carry {cc & 1}, dmpkg_ver=${v:04X})"))
     m = Machine({}, present=False)
     c0 = m.cpu.cycles
     m.run(prog, 0x1000, 0x1002)
@@ -566,11 +578,49 @@ def init_test():
     return all(results)
 
 
+REOPEN_ASM = r"""
+        org     $1000
+        bra     start
+done    bra     done                fixed at $1002 - harness stops here
+start
+        jsr     dmpkg_init          once, at start
+        lbcs    fail
+        ldx     #DMPKG_MountName
+        ldy     #{hdr}
+        jsr     dmpkg_open
+        bcs     fail
+        ldx     #FONT               stream now parked inside a block
+        jsr     dmpkg_load
+        bcs     fail
+        ldx     #$6000              wipe FONT
+@wipe   clr     ,x+
+        cmpx    #$6000+767
+        blo     @wipe
+        ldx     #DMPKG_MountName    open again without dmpkg_close
+        ldy     #{hdr}
+        jsr     dmpkg_open
+        bcs     fail
+        ldx     #FONT
+        jsr     dmpkg_load
+        bcs     fail
+        jsr     dmpkg_close
+        clra
+fail    sta     $0100
+        bra     done
+
+        include "dmpkg.asm"
+        include "assets.inc"
+        include "assettab.asm"
+"""
+
+
 FAIL_ASM = r"""
         org     $1000
         bra     start
 done    bra     done
 start
+        jsr     dmpkg_init          once, at start
+        lbcs    fail
         ldx     #DMPKG_MountName
         ldy     #DMPKG_BuildID
         jsr     dmpkg_open
@@ -775,6 +825,17 @@ def run_all(ex, src):
     m.run(bprog, 0x1000, bdone)
     chk(m.peek(0x100, 1)[0] == EHDR, "wrong build_id -> DMPKG_EHDR")
 
+    # ---- run 2d: dmpkg_open again while a stream is still running (FONT
+    # loaded, stream parked part way into a block): the state is rmb and
+    # dmpkg_init clears it, so the running stream is found by BUSY and aborted
+    rprog, rdone = assemble(ex, build, "DMPKG_BuildID", src=REOPEN_ASM)
+    m = Machine(files_on_card, mounted="DEMO.DSK")
+    m.run(rprog, 0x1000, rdone)
+    rr = (m.peek(0x100, 1)[0], m.peek(0x6000, 767) == src["font.bin"],
+          ("abort",) in m.sdc.log, m.sdc.streams_started)
+    chk(rr == (0, True, True, 4),                    # open, FONT, open, FONT
+        f"dmpkg_open while a stream runs: aborted by BUSY, reopened, FONT loads again {rr}")
+
     # ---- run 2b: right build_id, wrong magic: not a dmpkg image
     m = Machine({"DEMO.DSK": b"XMPK" + img[4:]}, mounted="DEMO.DSK")
     m.run(prog, 0x1000, done)
@@ -795,7 +856,7 @@ def run_all(ex, src):
     chk(m.sdc.stream is None and ("abort",) in m.sdc.log, "  stream stopped after the error")
     chk(m.peek(0x6000, 767) == src["font.bin"], "  assets before it still loaded")
 
-    # ---- no SDC at all: dmpkg_open stops at the presence check
+    # ---- no SDC at all: dmpkg_init stops at the presence check
     m = Machine(files_on_card, present=False)
     m.run(prog, 0x1000, done)
     err = m.peek(0x100, 1)[0]
@@ -854,6 +915,8 @@ LAYOUT_ASM = r"""
         bra     start
 done    bra     done
 start
+        jsr     dmpkg_init          once, at start
+        lbcs    fail
         ldx     #DMPKG_MountName
         ldy     #DMPKG_BuildID
         jsr     dmpkg_open
