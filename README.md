@@ -26,24 +26,7 @@ dmpkg list --map build/DEMO.DSK --names build/DEMO.map   # track-by-track disk m
 
 `dmpkg tokenize PROG.TXT PROG.BAS` turns an ASCII BASIC program into a tokenized one, the way the CoCo 3 ROM would, and `dmpkg detokenize PROG.BAS` lists one. See [docs/DISK.md](docs/DISK.md#basic-programs).
 
-```asm
-        jsr     dmpkg_init          ; once, at start: SDC there, firmware 117+
-        bcs     error               ; A = error code
-        ldx     #DMPKG_MountName    ; from assettab.asm (0 on a disk image: no mount)
-        ldy     #DMPKG_BuildID      ; 0 to skip the stale-image check
-        jsr     dmpkg_open
-        bcs     error               ; A = error code
-        ldx     #TITLE              ; asset descriptor
-        jsr     dmpkg_load
-        bcs     error
-        ldx     #CODE               ; DECB asset
-        jsr     dmpkg_load          ; U = exec address
-        jsr     dmpkg_close         ; back to floppy emulation
-        ...
-        include "dmpkg.asm"
-        include "assets.inc"
-        include "assettab.asm"
-```
+A loader calls `dmpkg_init` once, then `dmpkg_open` and `dmpkg_load` for each asset: see [docs/RUNTIME.md](docs/RUNTIME.md) for the calls and a code example, and `example/loader.asm` for a complete loader.
 
 Requires Python 3.8+ and PyYAML (installed by `pip install -e python`).
 
