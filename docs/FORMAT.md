@@ -4,7 +4,7 @@ This is the on-card layout written by `dmpkg build` and read by `asm/dmpkg.asm` 
 
 An image comes in two forms with the same header, TOC and asset encoding:
 
-- **Stream image** (`.SDS`): just the dmpkg data. The program mounts it by name.
+- **Stream image** (`.SDS`, for "SDC stream"): just the dmpkg data. The program mounts it by name. The extension is only a convention: the runtime checks the header, not the name. It isn't `.DSK` because the file has no DECB directory to `DIR` or `LOADM` from.
 - **Disk image** (`.DSK`, with `disk:` in the manifest): also a 35-track DECB disk. The dmpkg data sits in granules owned by a `DMPKG.DAT` file (or the name in `disk.data`), next to the loader program, so one file holds both. See [DECB disk image](#decb-disk-image).
 
 ## Overall layout
