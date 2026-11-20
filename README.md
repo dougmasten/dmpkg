@@ -58,7 +58,7 @@ python/         the packer, a Python project of its own
                 basic.py     BASIC tokenizer and lister (the CoCo 3 ROM's rules)
                 outputs.py   equates, table and map text
                 cli.py       the dmpkg command (build, list, verify)
-  tests/        end-to-end test of the packer and runtime (run_test.py)
+  tests/        the tests: harness.py (SDC model, 6809 machine), test_*.py, run_test.py runs them all
 asm/            the 6809 runtime (dmpkg.asm)
 example/        example project: manifest, asset generator, loader, Makefile
 hwtest/         tests for a real CoCo SDC, a folder and Makefile each: main/, stress/

@@ -13,7 +13,7 @@ requires-python = ">=3.8"
 dependencies = ["PyYAML"]
 
 [project.optional-dependencies]
-test = ["MC6809"]          # 6809 core for tests/run_test.py (also needs lwasm)
+test = ["MC6809"]          # 6809 core for the tests in tests/ (also needs lwasm)
 
 [project.scripts]
 dmpkg = "dmpkg.cli:main"
