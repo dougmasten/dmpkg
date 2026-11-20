@@ -1,0 +1,81 @@
+# Stress test (docs/HWTEST.md#stress-test): one disk holding 64 assets of
+# 8K, a rolling pattern each (mkstress.py). AUTOEXEC.BAS runs
+# STRESS.BIN, which opens the disk and streams all of them into $4000-$5FFF
+# over and over, checking each one's checksum, until a key is pressed.
+
+project:
+  name: STRESS
+  image: build/STRESS.DSK
+  equates: build/assets.inc
+  table: build/assettab.asm
+  map: build/STRESS.map
+  disk:
+    loader: build/STRESS.BIN
+    reserve: 3                  # STRESS.BIN (2 granules) and AUTOEXEC.BAS
+    data: STRESS.DAT
+
+assets:
+  - {name: s00, file: assets/s00.bin, load: 0x4000}
+  - {name: s01, file: assets/s01.bin, load: 0x4000}
+  - {name: s02, file: assets/s02.bin, load: 0x4000}
+  - {name: s03, file: assets/s03.bin, load: 0x4000}
+  - {name: s04, file: assets/s04.bin, load: 0x4000}
+  - {name: s05, file: assets/s05.bin, load: 0x4000}
+  - {name: s06, file: assets/s06.bin, load: 0x4000}
+  - {name: s07, file: assets/s07.bin, load: 0x4000}
+  - {name: s08, file: assets/s08.bin, load: 0x4000}
+  - {name: s09, file: assets/s09.bin, load: 0x4000}
+  - {name: s10, file: assets/s10.bin, load: 0x4000}
+  - {name: s11, file: assets/s11.bin, load: 0x4000}
+  - {name: s12, file: assets/s12.bin, load: 0x4000}
+  - {name: s13, file: assets/s13.bin, load: 0x4000}
+  - {name: s14, file: assets/s14.bin, load: 0x4000}
+  - {name: s15, file: assets/s15.bin, load: 0x4000}
+  - {name: s16, file: assets/s16.bin, load: 0x4000}
+  - {name: s17, file: assets/s17.bin, load: 0x4000}
+  - {name: s18, file: assets/s18.bin, load: 0x4000}
+  - {name: s19, file: assets/s19.bin, load: 0x4000}
+  - {name: s20, file: assets/s20.bin, load: 0x4000}
+  - {name: s21, file: assets/s21.bin, load: 0x4000}
+  - {name: s22, file: assets/s22.bin, load: 0x4000}
+  - {name: s23, file: assets/s23.bin, load: 0x4000}
+  - {name: s24, file: assets/s24.bin, load: 0x4000}
+  - {name: s25, file: assets/s25.bin, load: 0x4000}
+  - {name: s26, file: assets/s26.bin, load: 0x4000}
+  - {name: s27, file: assets/s27.bin, load: 0x4000}
+  - {name: s28, file: assets/s28.bin, load: 0x4000}
+  - {name: s29, file: assets/s29.bin, load: 0x4000}
+  - {name: s30, file: assets/s30.bin, load: 0x4000}
+  - {name: s31, file: assets/s31.bin, load: 0x4000}
+  - {name: s32, file: assets/s32.bin, load: 0x4000}
+  - {name: s33, file: assets/s33.bin, load: 0x4000}
+  - {name: s34, file: assets/s34.bin, load: 0x4000}
+  - {name: s35, file: assets/s35.bin, load: 0x4000}
+  - {name: s36, file: assets/s36.bin, load: 0x4000}
+  - {name: s37, file: assets/s37.bin, load: 0x4000}
+  - {name: s38, file: assets/s38.bin, load: 0x4000}
+  - {name: s39, file: assets/s39.bin, load: 0x4000}
+  - {name: s40, file: assets/s40.bin, load: 0x4000}
+  - {name: s41, file: assets/s41.bin, load: 0x4000}
+  - {name: s42, file: assets/s42.bin, load: 0x4000}
+  - {name: s43, file: assets/s43.bin, load: 0x4000}
+  - {name: s44, file: assets/s44.bin, load: 0x4000}
+  - {name: s45, file: assets/s45.bin, load: 0x4000}
+  - {name: s46, file: assets/s46.bin, load: 0x4000}
+  - {name: s47, file: assets/s47.bin, load: 0x4000}
+  - {name: s48, file: assets/s48.bin, load: 0x4000}
+  - {name: s49, file: assets/s49.bin, load: 0x4000}
+  - {name: s50, file: assets/s50.bin, load: 0x4000}
+  - {name: s51, file: assets/s51.bin, load: 0x4000}
+  - {name: s52, file: assets/s52.bin, load: 0x4000}
+  - {name: s53, file: assets/s53.bin, load: 0x4000}
+  - {name: s54, file: assets/s54.bin, load: 0x4000}
+  - {name: s55, file: assets/s55.bin, load: 0x4000}
+  - {name: s56, file: assets/s56.bin, load: 0x4000}
+  - {name: s57, file: assets/s57.bin, load: 0x4000}
+  - {name: s58, file: assets/s58.bin, load: 0x4000}
+  - {name: s59, file: assets/s59.bin, load: 0x4000}
+  - {name: s60, file: assets/s60.bin, load: 0x4000}
+  - {name: s61, file: assets/s61.bin, load: 0x4000}
+  - {name: s62, file: assets/s62.bin, load: 0x4000}
+  - {name: s63, file: assets/s63.bin, load: 0x4000}

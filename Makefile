@@ -5,7 +5,8 @@
 #                   6809 end-to-end test (which makes its own random assets;
 #                   TEST_SEED=n repeats a run)
 #   make asm        assemble the runtime for 6809 and 6309, report its size
-#   make hwtest     build the hardware test disks (docs/HWTEST.md)
+#   make hwtest     build the hardware and stress test disks (hwtest/Makefile,
+#                   docs/HWTEST.md)
 #   make clean      remove generated files (example's included)
 #
 # The example has its own Makefile: cd example && make (build, verify, list).
@@ -51,43 +52,13 @@ asm: $(RUNTIME)
 test: example asm hwtest
 	$(PYTHON) python/tests/run_test.py
 
-# Hardware test (docs/HWTEST.md): HWTEST.SDS is mounted by name, and the two
-# disks' loaders include its symbols, so it's built first. Each disk is then
-# built in two passes like the example (example/Makefile).
-HW      := hwtest
-HWB     := $(HW)/build
-HWSTAMP := $(HWB)/.assets
-HWSDS   := $(HWB)/HWTEST.SDS
-HWDISKS := $(HWB)/HWTEST.DSK $(HWB)/HWBIG.DSK
-
-$(HWSTAMP): $(HW)/mkhw.py $(HW)/disk.yaml $(HW)/big.yaml $(HW)/stream.yaml $(PACKER)
-	$(PYTHON) $(HW)/mkhw.py
-	@touch $@
-
-$(HWSDS): $(HWSTAMP)
-	$(PYTHON) -m dmpkg build $(HW)/stream.yaml
-
-$(HWB)/.pass1-%: $(HWSTAMP)
-	$(PYTHON) -m dmpkg build $(HW)/$*.yaml --no-loader
-	@touch $@
-
-$(HWB)/HWTEST.BIN: $(HW)/hwtest.asm $(RUNTIME) $(HWSDS) $(HWB)/.pass1-disk
-	$(LWASM) --6809 --format=decb -I asm -I $(HWB)/disk -I $(HWB) -o $@ $<
-
-$(HWB)/HWBIG.BIN: $(HW)/hwtest.asm $(RUNTIME) $(HWSDS) $(HWB)/.pass1-big
-	$(LWASM) --6809 --format=decb -DHWBIG -I asm -I $(HWB)/big -I $(HWB) -o $@ $<
-
-$(HWB)/HWTEST.DSK: $(HWB)/HWTEST.BIN
-	$(PYTHON) -m dmpkg build $(HW)/disk.yaml
-
-$(HWB)/HWBIG.DSK: $(HWB)/HWBIG.BIN
-	$(PYTHON) -m dmpkg build $(HW)/big.yaml
-
-hwtest: $(HWSDS) $(HWDISKS)
-	@for f in $(HWSDS) $(HWDISKS); do $(PYTHON) -m dmpkg verify $$f || exit 1; done
-	@echo "copy $(HWSDS) $(HWDISKS) to one folder on the SD card (docs/HWTEST.md)"
+# Hardware and stress tests (docs/HWTEST.md), each with its own Makefile
+# under hwtest/
+hwtest:
+	$(MAKE) -C hwtest PYTHON='$(PYTHON)' LWASM='$(LWASM)'
 
 clean:
 	$(MAKE) -C $(EXAMPLE) clean
-	rm -rf $(OUT) $(HWB) $(HW)/assets
+	$(MAKE) -C hwtest clean
+	rm -rf $(OUT)
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +

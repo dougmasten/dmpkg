@@ -61,7 +61,7 @@ python/         the packer, a Python project of its own
   tests/        end-to-end test of the packer and runtime (run_test.py)
 asm/            the 6809 runtime (dmpkg.asm)
 example/        example project: manifest, asset generator, loader, Makefile
-hwtest/         test disks for a real CoCo SDC (make hwtest)
+hwtest/         tests for a real CoCo SDC, a folder and Makefile each: main/, stress/
 docs/           the documentation (below)
 Makefile        runs the tests across both parts (the example included)
 ```

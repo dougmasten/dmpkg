@@ -14,7 +14,7 @@ make test TEST_SEED=1234        # repeat a run with the seed it printed
 make test LWASM=/path/to/lwasm  # if lwasm isn't on PATH
 ```
 
-Other targets: `make hwtest` (the [hardware test](HWTEST.md) disks; `make test` builds them and runs their loaders against the model), `make asm` (assembles the runtime for 6809 and 6309 at `ASM_ORG`, default `0x2000`, and prints its size), `make clean`. The example builds with its own Makefile: `cd example && make` (also `make verify`, `make list`); `make test` runs it first.
+Other targets: `make hwtest` (the [hardware test](HWTEST.md) disks and the [stress test](HWTEST.md#stress-test) disk; `make test` builds them and runs their loaders against the model), `make asm` (assembles the runtime for 6809 and 6309 at `ASM_ORG`, default `0x2000`, and prints its size), `make clean`. The example builds with its own Makefile: `cd example && make` (also `make verify`, `make list`); `make test` runs it first.
 
 ## Not yet verified on hardware
 

@@ -695,6 +695,7 @@ def main():
         ok &= basic_test()
         ok &= decb_word_fail_test()
     ok &= hwtest_test()
+    ok &= stress_test()
     print("ALL PASS" if ok else "SOME FAILED")
     return 0 if ok else 1
 
@@ -1077,10 +1078,73 @@ def screen(m):
     return [r for r in rows if r]
 
 
+def stress_test():
+    """The stress test loader (make hwtest): a clean pass, a byte corrupted
+    in one asset (found, with its offset and the bytes read and wanted), and
+    a stale build_id (counted as E4 at open). Keys come from a stand-in for
+    the ROM's POLCAT, which answers with nothing until the poll it's told."""
+    path = os.path.join(ROOT, "hwtest", "stress", "build", "STRESS.DSK")
+    if not os.path.isfile(path):
+        return check(False, "stress: image not built (make hwtest)")
+    img = read(path)
+    segs, exe = decb.parse_loadm(disk_files(img)["STRESS.BIN"][2], "STRESS.BIN")
+    results = [check(all(a + len(d) <= 0x2600 for a, d in segs),
+                     "stress: loader ends below $2600 (AUTOEXEC.BAS)")]
+
+    def run(disk, key_at):
+        m = Machine({"STRESS.DSK": disk}, mounted="STRESS.DSK")
+        polls = [0]
+        rom = {0xA000: 0xA1, 0xA001: 0x00,           # [POLCAT] -> lda $A1F0 / rts
+               0xA100: 0xB6, 0xA101: 0xA1, 0xA102: 0xF0, 0xA103: 0x39}
+
+        def rd(_c, _a, addr):
+            if addr == 0xA1F0:
+                polls[0] += 1
+                return 0x20 if polls[0] >= key_at else 0
+            return rom.get(addr, 0)
+        m.mem.add_read_byte_callback(rd, 0xA000, 0xA1FF)
+        m.call(segs, exe, max_ops=60_000_000)
+        rows = {r.split("  ")[0].strip(): r for r in screen(m)}
+        return m, screen(m), rows
+
+    def num(rows, label):
+        return int(rows[label][len(label):].split()[0])
+
+    # clean: 64 asset polls answer nothing, the poll after the pass stops it
+    m, text, rows = run(img, 65)
+    results.append(check(num(rows, "PASSES") == 1 and num(rows, "BAD SUM") == 0
+                         and num(rows, "OPEN ERRORS") == 0 and num(rows, "LOAD ERRORS") == 0
+                         and m.sdc.streams_started == 3 and not m.sdc.cmdmode,
+                         f"stress: a clean pass of 64 assets ({m.cpu.cycles} cycles): streams for "
+                         "the header, the first asset and past track 17 only, closed"))
+    # one byte of s05 corrupted on the disk
+    _, _, ents = image.read_image(path)
+    bad = bytearray(img)
+    pos = ents[5]["block"] * 512 + ents[5]["off"] + 0x123
+    want = bad[pos]
+    bad[pos] ^= 0x5A
+    m, text, rows = run(bytes(bad), 65)
+    line = " ".join(text)
+    results.append(check(num(rows, "PASSES") == 1 and num(rows, "BAD SUM") == 1
+                         and "ASSET 05 OFF $0123" in line
+                         and f"GOT ${want ^ 0x5A:02X}  WANT ${want:02X}" in line,
+                         "stress: a corrupted byte -> BAD SUM 1, ASSET 05 OFF $0123, "
+                         "the bytes read and wanted"))
+    # stale build_id: every open fails with E4; the first poll stops it
+    stale = bytearray(img)
+    stale[4] ^= 0xFF
+    m, text, rows = run(bytes(stale), 1)
+    line = " ".join(text)
+    results.append(check(num(rows, "OPEN ERRORS") == 1 and num(rows, "PASSES") == 0
+                         and "E4     1" in line and "LAST ERROR  E4 AT OPEN" in line,
+                         "stress: a stale build_id -> OPEN ERRORS 1, E4 1, last error E4 at open"))
+    return all(results)
+
+
 def hwtest_test():
     """The hardware test loaders (make hwtest), run here first: on a CoCo 2
     and a CoCo 3, then with a corrupted asset and with HWTEST.SDS missing."""
-    hb = os.path.join(ROOT, "hwtest", "build")
+    hb = os.path.join(ROOT, "hwtest", "main", "build")
     names = ("HWTEST.DSK", "HWBIG.DSK", "HWTEST.SDS")
     if not all(os.path.isfile(os.path.join(hb, n)) for n in names):
         return check(False, "hwtest: images not built (make hwtest)")
