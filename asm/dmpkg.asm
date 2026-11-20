@@ -178,8 +178,8 @@ DMPKG_ETIME     equ     6               ; controller didn't answer in time
 DMPKG_EFAIL     equ     7               ; controller reported an error
 
 ; asset descriptor flags (dmpkg_desc.flags)
-DMPKG_F_PHYS    equ     $80             ; dest is a CoCo 3 physical address
-DMPKG_F_DECB    equ     $40             ; data is DECB records (exec in U)
+DMPKG_F_PHYS    equ     %10000000       ; dest is a CoCo 3 physical address
+DMPKG_F_DECB    equ     %01000000       ; data is DECB records (exec in U)
 
 ; asset descriptor (12 bytes, as dmpkg generates them in the table)
 dmpkg_desc      struct
