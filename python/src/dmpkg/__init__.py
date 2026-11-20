@@ -1,4 +1,4 @@
-"""dmpkg - project disc packer for the CoCo SDC STREAM protocol."""
+"""dmpkg - project image packer for the CoCo SDC STREAM protocol."""
 
 __version__ = "0.1.0"
 

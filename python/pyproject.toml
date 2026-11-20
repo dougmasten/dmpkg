@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dmpkg"
 dynamic = ["version"]
-description = "Project disc packer for the CoCo SDC STREAM protocol"
+description = "Project image packer for the CoCo SDC STREAM protocol"
 readme = "README.md"
 license = "Zlib"           # see LICENSE at the repo root
 authors = [{ name = "Doug Masten" }]

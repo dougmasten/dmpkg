@@ -1,5 +1,5 @@
 """
-dmpkg - project disc packer for the CoCo SDC STREAM protocol.
+dmpkg - project image packer for the CoCo SDC STREAM protocol.
 
 Usage:
   dmpkg build project.yaml [-v]
