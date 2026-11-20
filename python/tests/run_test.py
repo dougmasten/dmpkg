@@ -621,7 +621,7 @@ def run_all(ex, src):
     def chk(cond, msg):
         results.append(check(cond, msg))
 
-    # ---- single-file disk, built the way the Makefile does it: pass 1
+    # ---- single-file disk, built the way example/Makefile does it: pass 1
     # writes the include files, the loader is assembled against them, pass 2
     # puts it on the disk
     man = os.path.join(ex, "project.yaml")

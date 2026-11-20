@@ -19,7 +19,7 @@ lwasm --6809 --format=decb -I asm -I build -o build/LOADER.BIN loader.asm
 dmpkg build project.yaml               # pass 2: same layout, loader on the disk
 ```
 
-Asset placement and `build_id` don't depend on the loader, so pass 2 writes the same include files. The `Makefile` does this for the example, whose `example/loader.asm` loads every asset and returns to BASIC.
+Asset placement and `build_id` don't depend on the loader, so pass 2 writes the same include files. `example/Makefile` does this for the example, whose `example/loader.asm` loads every asset and returns to BASIC.
 
 ## Interrupts
 

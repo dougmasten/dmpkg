@@ -15,12 +15,13 @@ project.yaml ──► dmpkg build ───► build/DEMO.DSK      → SD card 
 
 ```sh
 pip install -e python              # dmpkg command (or: PYTHONPATH=python/src python3 -m dmpkg)
-make build                          # assets, include files, loader, then DEMO.DSK
-dmpkg verify example/build/DEMO.DSK
-dmpkg list   example/build/DEMO.DSK
+cd example
+make                                # assets, include files, loader, then build/DEMO.DSK
+make verify                         # or: dmpkg verify build/DEMO.DSK
+make list                           # or: dmpkg list build/DEMO.DSK
 ```
 
-`make build` runs the steps of a [two-pass build](docs/DISK.md#two-pass-build): `example/mkassets.py` writes the example's assets (random filler, fixed seed), `dmpkg build` writes the include files, lwasm assembles `example/loader.asm` against them, and a second `dmpkg build` puts the loader on the disk. The Makefile runs the package straight from `python/src/`, so it works without installing.
+`example/Makefile` runs the steps of a [two-pass build](docs/DISK.md#two-pass-build): `mkassets.py` writes the example's assets (random filler, fixed seed), `dmpkg build` writes the include files, lwasm assembles `loader.asm` against them, and a second `dmpkg build` puts the loader on the disk. It runs the package straight from `python/src/`, so it works without installing.
 
 ```asm
         ldx     #DMPKG_MountName    ; from assettab.asm (0 on a disk image: no mount)
@@ -53,10 +54,10 @@ python/         the packer, a Python project of its own
                 cli.py       the dmpkg command (build, list, verify)
   tests/        end-to-end test of the packer and runtime (run_test.py)
 asm/            the 6809 runtime (dmpkg.asm)
-example/        example project, asset generator and loader
+example/        example project: manifest, asset generator, loader, Makefile
 hwtest/         test disks for a real CoCo SDC (make hwtest)
 docs/           the documentation (below)
-Makefile        builds the example and runs the tests across both parts
+Makefile        runs the tests across both parts (the example included)
 ```
 
 ## Documentation
