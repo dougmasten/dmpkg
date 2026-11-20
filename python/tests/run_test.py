@@ -38,6 +38,7 @@ import io
 import logging
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -1109,9 +1110,10 @@ def hwtest_test():
                                  f"{what}: all passed, disk remounted"))
             # timing: 10 ticks of restarts (1.39 ms each) and 52 of streaming
             # (6.66 ms a block) in the model; checked against cycle counts
+            tm = re.findall(r"(BLOCK|RESTART) MS +(\S+)", cells)
             results.append(check("BLOCK MS   6.7" in cells and "RESTART MS 1.4" in cells
                                  and m.peek(0x010C, 3) == bytes(3) and not m.crb & 1,
-                                 f"{what}: timing cells, IRQ hook and PIA put back"))
+                                 f"{what}: timing cells {tm}, IRQ hook and PIA put back"))
     bad = dict(card)
     img = bytearray(card["HWTEST.DSK"])
     img[3 * 512 + 43 + 700] ^= 0xFF                 # a byte in the middle of C_MULTI
