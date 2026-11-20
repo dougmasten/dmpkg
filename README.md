@@ -73,6 +73,7 @@ Makefile        runs the tests across both parts (the example included)
 | [docs/MANIFEST.md](docs/MANIFEST.md) | the project manifest: every key, default and check, layout, generated symbols |
 | [docs/RUNTIME.md](docs/RUNTIME.md) | the 6809 runtime: calls, error codes, presence and firmware checks, phys loads, configuration |
 | [docs/DISK.md](docs/DISK.md) | single-file disk images: the two-pass build, interrupts |
+| [docs/LOADING.md](docs/LOADING.md) | why dmpkg loads fast, and tips for a fast loader: load order, asset sizes, CPU speed, what to measure |
 | [docs/FORMAT.md](docs/FORMAT.md) | the image format, byte by byte, with a worked example |
 | [docs/SDC_FIRMWARE.md](docs/SDC_FIRMWARE.md) | CoCo SDC firmware and SDC-DOS versions: what each added, and what dmpkg needs |
 | [docs/TESTING.md](docs/TESTING.md) | the test suite, and what hasn't been tried on real hardware |
