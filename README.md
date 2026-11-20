@@ -24,8 +24,6 @@ dmpkg list --map build/DEMO.DSK --names build/DEMO.map   # track-by-track disk m
 
 `example/Makefile` runs the steps of a [two-pass build](docs/DISK.md#two-pass-build): `mkassets.py` writes the example's assets (random filler, fixed seed), `dmpkg build` writes the include files, lwasm assembles `loader.asm` against them, and a second `dmpkg build` puts the loader on the disk. It runs the package straight from `python/src/`, so it works without installing.
 
-`dmpkg tokenize PROG.TXT PROG.BAS` turns an ASCII BASIC program into a tokenized one, the way the CoCo 3 ROM would (`--uppercase` for one written in lower case), and `dmpkg detokenize PROG.BAS` lists one. See [docs/DISK.md](docs/DISK.md#basic-programs).
-
 A loader calls `dmpkg_init` once, then `dmpkg_open` and `dmpkg_load` for each asset: see [docs/RUNTIME.md](docs/RUNTIME.md) for the calls and a code example, and `example/loader.asm` for a complete loader.
 
 Requires Python 3.8+ and PyYAML (installed by `pip install -e python`).
@@ -55,7 +53,7 @@ Makefile        runs the tests across both parts (the example included)
 |---|---|
 | [docs/MANIFEST.md](docs/MANIFEST.md) | the project manifest: every key, default and check, layout, generated symbols |
 | [docs/RUNTIME.md](docs/RUNTIME.md) | the 6809 runtime: calls, error codes, presence and firmware checks, phys loads, configuration |
-| [docs/DISK.md](docs/DISK.md) | single-file disk images: the two-pass build, interrupts |
+| [docs/DISK.md](docs/DISK.md) | single-file disk images: the two-pass build, interrupts, the BASIC tokenizer (`dmpkg tokenize`) |
 | [docs/FAST_LOADING.md](docs/FAST_LOADING.md) | why dmpkg loads fast, and tips for a fast loader: load order, asset sizes, CPU speed, what to measure |
 | [docs/FORMAT.md](docs/FORMAT.md) | the image format, byte by byte, with a worked example |
 | [docs/SDC_FIRMWARE.md](docs/SDC_FIRMWARE.md) | CoCo SDC firmware and SDC-DOS versions: what each added, and what dmpkg needs |
