@@ -23,6 +23,11 @@ The SDC model enforces the protocol as documented and raises on misuse:
   - present=False: no SDC at all; its registers read $FF and any command
     written is logged as an error
 
+The machine has a 60 Hz field sync: PIA0 sets the $FF03 flag every
+FIELD cycles, and with $FF03 bit 0 set and IRQ unmasked the CPU takes an
+IRQ through $FFF8, which points straight at BASIC's RAM hook $010C.
+Reading $FF02 clears the flag.
+
 The example builds as a single-file DECB disk: its loader is assembled and
 put on the disk, then read back through the DECB directory and run. The
 same manifest without disk: covers the bare stream image and the mount
@@ -64,6 +69,7 @@ ENODEV, EVER, EMOUNT, EHDR, EEOF, ETIME, EFAIL = range(1, 8)
 READY_LAG = 20          # cycles READY stays stale after a block is drained
 FILL_TIME = 400         # cycles to "read" the next block from the card
 CMD_SETTLE = 36         # 20us at 1.79MHz: no register access after a command
+FIELD = 14915           # cycles per 60 Hz field at 0.89MHz
 
 
 class SDCError(Exception):
@@ -270,6 +276,35 @@ class Machine:
         m.add_write_byte_callback(self._mmu_w, 0xFFA2)
         m.add_read_byte_callback(self._win_r, 0x4000, 0x5FFF)
         m.add_write_byte_callback(self._win_w, 0x4000, 0x5FFF)
+        self.crb = 0x34                       # PIA0 CRB: field sync IRQ off
+        self.fs = False                       # field sync flag
+        self.next_field = FIELD
+        m.add_read_byte_callback(self._pia_bd, 0xFF02)
+        m.add_read_byte_callback(lambda *_: self.crb | (0x80 if self.fs else 0), 0xFF03)
+        m.add_write_byte_callback(self._pia_bc, 0xFF03)
+        m.load(0xFFF8, b"\x01\x0c")            # IRQ -> $010C
+
+    def _pia_bd(self, *_):
+        self.fs = False
+        return 0xFF
+
+    def _pia_bc(self, _c, _a, _addr, v):
+        self.crb = v & 0x3F
+        return v
+
+    def step(self):
+        """One instruction, after the field sync and an IRQ if one is due."""
+        c = self.cpu
+        if c.cycles >= self.next_field:
+            self.next_field += FIELD
+            self.fs = True
+        if self.fs and self.crb & 1 and not c.get_cc_value() & 0x10:
+            c.set_cc(c.get_cc_value() | 0x80)  # E: whole state
+            c.push_irq_registers()
+            c.set_cc(c.get_cc_value() | 0x10)  # I
+            c.cycles += 18
+            c.program_counter.set(self.mem.read_word(0xFFF8))
+        c.get_and_call_next_op()
 
     def _mmu_w(self, _c, _a, _addr, v):
         self.mmu = v
@@ -289,7 +324,7 @@ class Machine:
         for _ in range(max_ops):
             if self.cpu.program_counter.value == done:
                 return
-            self.cpu.get_and_call_next_op()
+            self.step()
         raise RuntimeError("program did not finish")
 
     def call(self, segs, entry, max_ops=20_000_000):
@@ -304,7 +339,7 @@ class Machine:
         for _ in range(max_ops):
             if self.cpu.program_counter.value == ret:
                 return self.cpu.accu_a.value
-            self.cpu.get_and_call_next_op()
+            self.step()
         raise RuntimeError("program did not return")
 
     def peek(self, a, n):
@@ -892,10 +927,12 @@ def hwtest_test():
     card = {n: read(os.path.join(hb, n)) for n in names}
     results = []
 
-    def run(disk, coco3, files=None):
+    def run(disk, coco3, files=None, field=True):
         img = (files or card)[disk]
         segs, exe = decb.parse_loadm(disk_files(img)[disk.replace("DSK", "BIN")][2], disk)
         m = Machine(dict(files or card), mounted=disk)
+        if not field:
+            m.next_field = float("inf")
         m.mem.load(0xFFFE, b"\x8c\x1b" if coco3 else b"\xa0\x27")
         fails = m.call(segs, exe)
         return fails, screen(m), m
@@ -911,6 +948,11 @@ def hwtest_test():
                                  and ("TAIL       OK" in cells) == (disk == "HWBIG.DSK")
                                  and m.sdc.mounted == disk,
                                  f"{what}: all passed, disk remounted"))
+            # timing: 10 ticks of restarts (1.39 ms each) and 52 of streaming
+            # (6.66 ms a block) in the model; checked against cycle counts
+            results.append(check("BLOCK MS   6.7" in cells and "RESTART MS 1.4" in cells
+                                 and m.peek(0x010C, 3) == bytes(3) and not m.crb & 1,
+                                 f"{what}: timing cells, IRQ hook and PIA put back"))
     bad = dict(card)
     img = bytearray(card["HWTEST.DSK"])
     img[3 * 512 + 43 + 700] ^= 0xFF                 # a byte in the middle of C_MULTI
@@ -924,6 +966,11 @@ def hwtest_test():
     results.append(check(fails == 1 and "MOUNT SDS  e3" in " ".join(text)
                          and m.sdc.mounted == "HWTEST.DSK",
                          "hwtest: HWTEST.SDS missing shows MOUNT SDS E3, disk still remounted"))
+    fails, text, _ = run("HWTEST.DSK", False, field=False)
+    cells = " ".join(text)
+    results.append(check(fails == 0 and "BLOCK MS   NOIRQ" in cells
+                         and "RESTART MS SKIP" in cells,
+                         "hwtest: no field sync IRQ shows BLOCK MS NOIRQ, not a failure"))
     if not all(results):
         print("\n".join("    |" + r for r in text))
     return all(results)

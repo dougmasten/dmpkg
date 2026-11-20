@@ -18,3 +18,5 @@ assets:
   - {name: d_align, file: assets/d_align.bin, load: 0x3B00, align: true}
   - {name: e_code,  file: assets/e_code.bin,  type: decb}     # 2 segments, exec $3E00
   - {name: f_phys,  file: assets/f_phys.bin,  phys: 0x60001}  # CoCo 3: 3 MMU windows
+  - {name: t_blk,   file: assets/t_blk.bin,   load: 0x4000, align: true}  # timing: 1 block
+  - {name: t_run,   file: assets/t_run.bin,   load: 0x4000, align: true}  # timing: 16 blocks

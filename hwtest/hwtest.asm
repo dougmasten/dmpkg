@@ -16,6 +16,8 @@
 ;   A_ODD..     each asset: memory wiped, dmpkg_load, bytes checked
 ;   EXEC        call the decb asset's exec address: D = $600D
 ;   RELOAD B    B_PACK again, out of order: restart and skip to its offset
+;   BLOCK MS    timing, not pass/fail: time to stream one 512-byte block
+;   RESTART MS  and the extra time a restart costs (see timing)
 ;   MOUNT SDS   dmpkg_open "M:HWTEST.SDS" by name, then its two assets
 ;   NO FILE     dmpkg_open "M:NOSUCH.SDS": E3
 ;   REMOUNT     dmpkg_open "M:HWTEST.DSK" (or HWBIG.DSK), so Disk BASIC gets
@@ -26,6 +28,11 @@
 
 SCREEN          equ     $0400           ; 32x16 text screen
 CURPOS          equ     $0088           ; BASIC's cursor address
+IRQHOOK         equ     $010C           ; BASIC's IRQ RAM vector (jmp addr)
+PIA0BD          equ     $FF02           ; read clears the field sync flag
+PIA0BC          equ     $FF03           ; bit 0: field sync (60 Hz) IRQ on
+NRLD            equ     128             ; timing: loads of T_BLK (1 block)
+NRUN            equ     8               ; timing: loads of T_RUN (16 blocks)
 
 ; cell results (anything else is a dmpkg error code)
 R_OK            equ     0
@@ -157,6 +164,7 @@ start
         ldy     #B_PACK_SUM
         ldu     #t_reload
         jsr     ldtest
+        jsr     timing          ; BLOCK MS, RESTART MS
 ;
 ; ---- mounting by name
 ;
@@ -367,6 +375,233 @@ walk    pshs    x,y,u
 @r      puls    x,y,u,pc
 
 ;------------------------------------------------------------------------------
+; timing: how long a restart costs against streaming on
+;
+; NRLD loads of T_BLK (one aligned block): each is a seek backwards, so a
+; restart plus one block. Then NRUN loads of T_RUN (16 aligned blocks): the
+; same NRLD blocks, but only NRUN restarts. Time is counted in 60 Hz ticks
+; from the field sync IRQ, so with R and S ticks:
+;   restart = (R - S) / (NRLD - NRUN)          ticks
+;   block   = (S - NRUN * restart) / NRLD      ticks
+; printed in ms to 0.1 (a tick is 16.67 ms; 20 ms on a 50 Hz machine, so
+; multiply by 1.2 there). One tick of jitter at each end is about 0.3 ms of
+; restart time. The loaded bytes are checked after each run.
+; Prints BLOCK MS and RESTART MS (normal video, not counted as failures),
+; or the error / BAD / NO IRQ in the first cell.
+;------------------------------------------------------------------------------
+timing  ldy     #T_BLK_SUM
+        jsr     wipe
+        jsr     tickon
+        ldb     #NRLD
+        stb     count
+        jsr     sync
+        lbcs    @noirq
+@rld    ldx     #T_BLK
+        jsr     dmpkg_load
+        lbcs    @err
+        dec     count
+        bne     @rld
+        ldd     ticks
+        std     tr
+        jsr     check           ; Y = T_BLK_SUM
+        tsta
+        lbne    @err
+        ldy     #T_RUN_SUM
+        jsr     wipe
+        ldb     #NRUN
+        stb     count
+        jsr     sync
+        lbcs    @noirq
+@run    ldx     #T_RUN
+        jsr     dmpkg_load
+        lbcs    @err
+        dec     count
+        bne     @run
+        ldd     ticks
+        std     ts
+        jsr     tickoff
+        jsr     check           ; Y = T_RUN_SUM
+        tsta
+        lbne    @err2
+        ldd     tr              ; D = R - S (0 if negative)
+        subd    ts
+        bcc     @pos
+        ldd     #0
+@pos    std     tdiff
+        ldd     ts              ; block: (15S - D) * 125 / 1440 tenths
+        aslb
+        rola
+        aslb
+        rola
+        aslb
+        rola
+        aslb
+        rola
+        subd    ts
+        subd    tdiff
+        bcc     @blk
+        ldd     #0
+@blk    tfr     d,x
+        ldb     #125
+        ldy     #1440
+        jsr     scale
+        jsr     fmt10
+        ldx     #vbuf
+        stx     rtext
+        lda     #R_TEXT
+        ldx     #t_block
+        jsr     cell
+        ldx     tdiff           ; restart: D * 125 / 90 tenths
+        ldb     #125
+        ldy     #90
+        jsr     scale
+        jsr     fmt10
+        lda     #R_TEXT
+        ldx     #t_restart
+        jmp     cell
+@noirq  jsr     tickoff
+        ldx     #t_noirq
+        stx     rtext
+        lda     #R_TEXT
+        bra     @show
+@err    jsr     tickoff
+@err2
+@show   ldx     #t_block
+        jsr     cell
+        lda     #R_SKIP
+        ldx     #t_restart
+        jmp     cell
+
+; tickon: count 60 Hz ticks in ticks: hook BASIC's IRQ vector, turn on the
+; field sync IRQ, unmask IRQ (FIRQ stays masked)
+tickon  lda     IRQHOOK
+        sta     irqsav
+        ldx     IRQHOOK+1
+        stx     irqsav+1
+        lda     #$7E            ; jmp tick
+        ldx     #tick
+        sta     IRQHOOK
+        stx     IRQHOOK+1
+        lda     PIA0BC
+        sta     crbsav
+        ora     #$01
+        sta     PIA0BC
+        lda     PIA0BD          ; drop a pending flag
+        andcc   #$EF
+        rts
+
+; tickoff: mask interrupts, put the PIA and BASIC's vector back. Keeps A
+tickoff pshs    a,x
+        orcc    #$50
+        lda     crbsav
+        sta     PIA0BC
+        lda     irqsav
+        sta     IRQHOOK
+        ldx     irqsav+1
+        stx     IRQHOOK+1
+        puls    a,x,pc
+
+tick    lda     PIA0BD          ; clear the flag
+        inc     ticks+1
+        bne     @r
+        inc     ticks
+@r      rti
+
+; sync: wait for the next tick, then zero ticks. C set if no tick came
+; (about a second): no field sync IRQ
+sync    ldx     #0
+        ldd     ticks
+@w      cmpd    ticks
+        bne     @go
+        leax    -1,x
+        bne     @w
+        coma
+        rts
+@go     ldd     #0
+        std     ticks
+        andcc   #$FE
+        rts
+
+; scale: D = X * B / Y, rounded, at most 9999 (Y below $8000)
+scale   stb     smul
+        tfr     x,d
+        sta     shi
+        lda     smul
+        mul                     ; low byte * B
+        std     prod+1
+        clr     prod
+        lda     shi
+        ldb     smul
+        mul                     ; high byte * B
+        addd    prod
+        std     prod
+        sty     sdiv
+        ldd     #0              ; remainder
+        ldx     #24
+@div    lsl     prod+2          ; quotient bits shift in from the right
+        rol     prod+1
+        rol     prod
+        rolb
+        rola
+        cmpd    sdiv
+        blo     @nb
+        subd    sdiv
+        inc     prod+2
+@nb     leax    -1,x
+        bne     @div
+        aslb                    ; round: remainder * 2 >= Y
+        rola
+        cmpd    sdiv
+        blo     @rnd
+        inc     prod+2
+        bne     @rnd
+        inc     prod+1
+        bne     @rnd
+        inc     prod
+@rnd    tst     prod
+        bne     @cap
+        ldd     prod+1
+        cmpd    #9999
+        bls     @r
+@cap    ldd     #9999
+@r      rts
+
+; fmt10: D = tenths (0-9999) -> "n.n" .. "999.9" in vbuf
+fmt10   std     val
+        ldx     #vbuf
+        ldy     #pow10
+        clr     sig
+@pow    lda     #'0'
+        sta     dig
+        ldd     val
+@sub    subd    ,y
+        bcs     @got
+        inc     dig
+        bra     @sub
+@got    addd    ,y
+        std     val
+        lda     dig
+        cmpy    #pow10+4        ; tens of tenths: always printed
+        beq     @put
+        cmpy    #pow10+6        ; the tenths: after the point
+        bne     @lead
+        ldb     #'.'
+        stb     ,x+
+        bra     @put
+@lead   tst     sig             ; no leading zeros
+        bne     @put
+        cmpa    #'0'
+        beq     @next
+@put    sta     ,x+
+        inc     sig
+@next   leay    2,y
+        cmpy    #pow10+8
+        bne     @pow
+        clr     ,x
+        rts
+pow10   fdb     1000,100,10,1
+
+;------------------------------------------------------------------------------
 ; Screen output. Cells are 16 characters: an 11-character label, then the
 ; result. Characters go to the screen as VDG codes, normal or inverse.
 ;------------------------------------------------------------------------------
@@ -507,6 +742,9 @@ t_mount fcn     "MOUNT SDS"
 t_sdata fcn     "S_DATA"
 t_salign fcn    "S_ALIGN"
 t_nofile fcn    "NO FILE"
+t_block fcn     "BLOCK MS"
+t_restart fcn   "RESTART MS"
+t_noirq fcn     "NOIRQ"
 t_ok    fcn     "OK"
 t_skip  fcn     "SKIP"
 t_bad   fcn     "BAD"
@@ -533,6 +771,20 @@ left    rmb     2
 n       rmb     2
 r1      rmb     2
 r2      rmb     2
+count   rmb     1               ; timing
+ticks   rmb     2
+tr      rmb     2
+ts      rmb     2
+tdiff   rmb     2
+irqsav  rmb     3
+crbsav  rmb     1
+smul    rmb     1
+shi     rmb     1
+sdiv    rmb     2
+prod    rmb     3
+val     rmb     2
+dig     rmb     1
+sig     rmb     1
 
         include "dmpkg.asm"
         include "assets.inc"

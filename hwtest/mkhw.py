@@ -28,7 +28,8 @@ from dmpkg import decb, image, layout, manifest
 HERE = os.path.dirname(os.path.abspath(__file__))
 SEED = 6309
 RAW = {"a_odd.bin": 767, "b_pack.bin": 300, "c_multi.bin": 1500, "d_align.bin": 513,
-       "f_phys.bin": 20001, "tail.bin": 10000, "s_data.bin": 600, "s_align.bin": 700}
+       "f_phys.bin": 20001, "tail.bin": 10000, "s_data.bin": 600, "s_align.bin": 700,
+       "t_blk.bin": 512, "t_run.bin": 16 * 512}
 FILL = 160 * 1024                       # big.yaml only: never loaded
 CODE_SEGS = ((0x3E00, 64), (0x3F00, 77))
 CODE = bytes([0xCC, 0x60, 0x0D, 0x39])  # ldd #$600D / rts: what EXEC expects back

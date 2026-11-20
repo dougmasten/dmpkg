@@ -10,6 +10,8 @@ The tests in [TESTING.md](TESTING.md) run against a model of the CoCo SDC. This 
 - phys loads through the MMU on a CoCo 3
 - reading past track 34 of a disk padded to hard-disk size
 
+It also times how long a stream restart takes compared with streaming a block, which the model can't tell us. That decides whether loading assets in image order is worth doing (see [Timing](#timing)).
+
 ## Build
 
 ```sh
@@ -40,7 +42,7 @@ Steps:
 2. `DRIVE 0,"HWTEST.DSK"`, then power-cycle or cold-start. `AUTOEXEC.BAS` runs the test. Or type `LOADM"HWTEST":EXEC`.
 3. Read the screen, then run the big disk the same way: `DRIVE 0,"HWBIG.DSK"`, then `LOADM"HWBIG":EXEC` (or cold-start).
 
-A run takes a second or two and returns to BASIC. `A` holds the number of failures, but BASIC doesn't show it, so read the screen.
+A run takes a few seconds and returns to BASIC. `A` holds the number of failures, but BASIC doesn't show it, so read the screen.
 
 On a CoCo 3, also try both disks at double speed: `POKE 65497,0` before `LOADM`. The runtime's settle delay (`DMPKG_DELAY`) is sized for 0.89 MHz to 1.79 MHz, so this is the case most likely to fail.
 
@@ -54,7 +56,8 @@ STOP       OK   A_ODD      OK
 B_PACK     OK   C_MULTI    OK
 D_ALIGN    OK   E_CODE     OK
 EXEC       OK   F_PHYS     OK
-RELOAD B   OK   MOUNT SDS  OK
+RELOAD B   OK   BLOCK MS   x.x
+RESTART MS x.x  MOUNT SDS  OK
 S_DATA     OK   S_ALIGN    OK
 NO FILE    OK   REMOUNT    OK
 ALL PASSED
@@ -69,6 +72,7 @@ Each cell shows a result:
 | `BAD` | the asset loaded without an error, but its bytes don't match their checksum |
 | `E1`–`E7` | the call returned that error code (see [RUNTIME.md](RUNTIME.md#error-codes)) |
 | `E0` | the call should have failed and didn't |
+| a number | `BLOCK MS` and `RESTART MS` only: a time in ms, not a pass or fail |
 
 Failures show in inverse video (dark on green) and are counted in the last line, `n FAILED`.
 
@@ -84,12 +88,28 @@ Failures show in inverse video (dark on green) and are counted in the last line,
 | `F_PHYS` | 20,001 bytes to physical `$060001`, across three 8K MMU windows. Physical `$60000–$6FFFF` is the HSCREEN area, unused at power-on |
 | `TAIL` | `HWBIG.DSK` only: 10,000 bytes from past track 34, in the padded part of the image |
 | `RELOAD B` | `B_PACK` again, out of order: the stream restarts at its block and skips to its offset |
+| `BLOCK MS`, `RESTART MS` | the [timing](#timing) results. `BLOCK MS` shows `BAD` or an error code if a timing load failed (counted as a failure), or `NOIRQ` if the 60 Hz interrupt never came (not counted). `RESTART MS` then shows `SKIP` |
 | `MOUNT SDS` | `dmpkg_open "M:HWTEST.SDS"` mounts by name, with its build_id checked. `E3` means the file isn't in the SDC's current directory |
 | `S_DATA`, `S_ALIGN` | the stream image's two assets |
 | `NO FILE` | `dmpkg_open "M:NOSUCH.SDS"` returns `E3` |
 | `REMOUNT` | `dmpkg_open "M:HWTEST.DSK"` (or `HWBIG.DSK`) puts the disk back in drive 0 for Disk BASIC. If it fails, type `DRIVE 0,"HWTEST.DSK"` before using the disk |
 
 The checksums come from `hwtest/mkhw.py`. They're Fletcher-style sums, so they catch bytes in the wrong order or place, not just wrong bytes.
+
+## Timing
+
+`BLOCK MS` is the time to stream one 512-byte block, and `RESTART MS` is the extra time a restart costs: going backwards in the image means the runtime has to abort the stream and start a new one.
+
+The loader measures them with two runs over the same 128 blocks, timed by the video's 60 Hz field-sync interrupt (PIA0 CB1):
+
+1. `T_BLK` (one aligned block) loaded 128 times. Each load goes backwards, so this is 128 restarts plus 128 blocks: R ticks.
+2. `T_RUN` (16 aligned blocks) loaded 8 times: 8 restarts plus 128 blocks, S ticks.
+
+A restart is (R − S) / 120 ticks, and a block is (S − 8 × restart) / 128. A tick is 16.67 ms. On a 50 Hz (PAL) machine it's 20 ms, so multiply both numbers by 1.2. Each run can be a tick out at each end, so `RESTART MS` is good to about ±0.3 ms. The loaded bytes are checked after each run.
+
+For the timing only, the loader points BASIC's IRQ hook at `$010C` to its own tick counter and turns on the field-sync IRQ (`$FF03` bit 0). It unmasks IRQ but not FIRQ, and puts everything back afterwards. The numbers `make test` gets from the model don't reflect real hardware.
+
+How to read them: if `RESTART MS` is close to `BLOCK MS`, or smaller, then the restarts that first-fit placement can cause cost a few ms each, and image-order loading isn't worth doing. If it's tens of ms, it is. Compare the numbers at normal speed and, on a CoCo 3, at double speed.
 
 ## Not covered
 
@@ -102,5 +122,5 @@ The checksums come from `hwtest/mkhw.py`. They're Fletcher-style sums, so they c
 | file | what it is |
 |---|---|
 | `hwtest/hwtest.asm` | the loader. `-DHWBIG` builds the `HWBIG.DSK` one |
-| `hwtest/disk.yaml`, `big.yaml`, `stream.yaml` | the three manifests. The stream image's symbols have an `S_` prefix, so the loaders can include them next to their own |
+| `hwtest/disk.yaml`, `big.yaml`, `stream.yaml` | the three manifests. `T_BLK` and `T_RUN` are the timing assets, both loaded to `$4000`. The stream image's symbols have an `S_` prefix, so the loaders can include them next to their own |
 | `hwtest/mkhw.py` | writes the assets (fixed seed) and `build/hwsums.inc`, the checksum table. It sizes `big.yaml`'s `GAP` filler from `disk.yaml`'s layout |
