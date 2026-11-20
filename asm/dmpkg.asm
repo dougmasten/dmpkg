@@ -454,11 +454,11 @@ dmpkg_load
         endc
         sta     dmpkg_msave
         ldd     dmpkg_desc.dest,x       ; block = dest >> 13: A:B = bits 23-8,
-        aslb                            ; shifted left 3 leaves bits 20-13 in A
+        lslb                            ; shifted left 3 leaves bits 20-13 in A
         rola
-        aslb
+        lslb
         rola
-        aslb
+        lslb
         rola
         sta     dmpkg_mblk
         sta     DMPKG_MMUREG
@@ -592,7 +592,7 @@ dmpkg_waitidle
         bne     @loop
         lda     #DMPKG_ETIME            ; ERROR CODE: BUSY timeout
         orcc    #1                      ; set carry (error)
-        fcb     $8C                     ; skip 2 bytes
+        puls    x,pc
 @ok     andcc   #$fe                    ; clear carry (success)
         puls    x,pc
 
@@ -609,8 +609,8 @@ dmpkg_waitidle
 ;             : fails, the stream ends, or the poll limit runs out.
 ;------------------------------------------------------------------------------
 dmpkg_waitready
-        bsr     dmpkg_settle
         pshs    x
+        bsr     dmpkg_settle
         lda     #DMPKG_TIMEOUT
         sta     dmpkg_tmo
         ldx     #0
@@ -725,7 +725,7 @@ dmpkg_nextblk
 dmpkg_copy
         pshs    b,x,y
         ldx     #SDC_DATA
-@loop   lda     dmpkg_left
+@loop   lda     dmpkg_left              ; any of the 24-bit count left?
         ora     dmpkg_left+1
         ora     dmpkg_left+2
         bne     @more
@@ -780,11 +780,11 @@ dmpkg_copy
         andb    #31                     ; and a 0-31 byte tail
         clra
         exg     d,y                     ; Y = tail, D = chunk (0-512)
-        aslb                            ; A = D/32 (D < 1024, so D<<3 >> 8)
+        lslb                            ; A = D/32 (D < 1024, so D<<3 >> 8)
         rola
-        aslb
+        lslb
         rola
-        aslb
+        lslb
         rola
         sta     dmpkg_n
         beq     @w2
