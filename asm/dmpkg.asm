@@ -145,7 +145,7 @@ DMPKG_TIMEOUT   equ     16
         error   "DMPKG_TIMEOUT must be 1-255"
         endc
         ifndef  DMPKG_MINVER
-DMPKG_MINVER    equ     $0117
+DMPKG_MINVER    equ     $0117           ; First version with the stream I/O command
         endc
 
 ; CoCo SDC registers
@@ -197,7 +197,6 @@ dmpkg_off       rmb     2       ; offset of the next byte in that block
 dmpkg_poll      rmb     1       ; nonzero: wait READY before the next byte
 dmpkg_left      rmb     3       ; bytes still to copy (24-bit)
 dmpkg_chunk     rmb     2       ; bytes in the current copy chunk
-dmpkg_n         rmb     1       ; 32-byte groups left in the chunk
 dmpkg_mblk      rmb     1       ; block mapped in the window
 dmpkg_msave     rmb     1       ; window block before the load
 dmpkg_tmo       rmb     1       ; timeout outer counter
@@ -344,12 +343,12 @@ dmpkg_open
 ;------------------------------------------------------------------------------
 dmpkg_stop
         pshs    a
-        tst     dmpkg_live
-        beq     @exit
-        clr     dmpkg_live
+        lda     dmpkg_live              ; is stream running?
+        beq     @exit                   ; no, exit
+        clr     dmpkg_live              ; clear stream running flag
         lda     #SDC_C_ABORT
-        sta     SDC_STAT
-        jsr     dmpkg_waitidle
+        sta     SDC_STAT                ; abort stream
+        jsr     dmpkg_waitidle          ; wait
 @exit   andcc   #$fe                    ; clear carry (success)
         puls    a,pc
 
@@ -360,11 +359,11 @@ dmpkg_stop
 ; Destroys    : CC
 ; Calls       : dmpkg_stop
 ; Description : Stops any stream, then returns the controller to floppy
-;             : emulation mode (0 to $FF40).
+;             : emulation mode.
 ;------------------------------------------------------------------------------
 dmpkg_close
-        bsr     dmpkg_stop
-        clr     SDC_LATCH
+        bsr     dmpkg_stop              ; stop stream
+        clr     SDC_LATCH               ; controller to floppy emulation mode
         rts
 
 ;------------------------------------------------------------------------------
@@ -437,7 +436,7 @@ dmpkg_load
         std     dmpkg_left
         lda     dmpkg_desc.len+2,x
         sta     dmpkg_left+2
-        tst     dmpkg_desc.flags,x      ; DMPKG_F_PHYS is bit 7
+        lda     dmpkg_desc.flags,x      ; DMPKG_F_PHYS is bit 7
         bmi     @phys
         pshs    u
         ldu     dmpkg_desc.dest+1,x
@@ -719,31 +718,35 @@ dmpkg_nextblk
 ; Calls       : dmpkg_waitready, dmpkg_nextblk
 ; Description : Copies stream bytes in chunks capped by the end of the block,
 ;             : the bytes left and, for phys loads, the end of the window (the
-;             : next 8K is mapped when it fills). Inner loop: 32 bytes per
-;             : pass, 16x LDD ,X / STD n,U.
+;             : next 8K is mapped when it fills). Inside, X is the destination,
+;             : Y points at the data registers and U carries the data, which
+;             : leaves A to count the passes of the inner loop: 32 bytes per
+;             : pass, 16x LDU ,Y / STU n,X.
 ;------------------------------------------------------------------------------
 dmpkg_copy
         pshs    b,x,y
-        ldx     #SDC_DATA
+        tfr     u,x                     ; X = destination
+        ldy     #SDC_DATA
 @loop   lda     dmpkg_left              ; any of the 24-bit count left?
-        ora     dmpkg_left+1
-        ora     dmpkg_left+2
-        bne     @more
+        ora     dmpkg_left+1            ; (OR its three bytes: zero only
+        ora     dmpkg_left+2            ; when all of them are)
+        bne     @more                   ; yes: copy another chunk
         andcc   #$fe                    ; clear carry (success)
-@exit   puls    b,x,y,pc
-@more   tst     dmpkg_poll              ; new block: wait for the buffer
+@exit   tfr     x,u                     ; U = past the data (CC kept)
+        puls    b,x,y,pc
+@more   lda     dmpkg_poll              ; new block: wait for the buffer
         beq     @nopoll
         jsr     dmpkg_waitready
         bcs     @exit
         clr     dmpkg_poll
-@nopoll tst     dmpkg_phys
+@nopoll lda     dmpkg_phys
         beq     @room
-        cmpu    #DMPKG_WEND             ; window full: map the next 8K
+        cmpx    #DMPKG_WEND             ; window full: map the next 8K
         bne     @room
         inc     dmpkg_mblk
         lda     dmpkg_mblk
         sta     DMPKG_MMUREG
-        ldu     #DMPKG_WINDOW
+        ldx     #DMPKG_WINDOW
 @room   ldd     #512                    ; chunk = bytes left in this block
         subd    dmpkg_off
         tst     dmpkg_left              ; capped by bytes left to copy
@@ -756,14 +759,13 @@ dmpkg_copy
         beq     @set_chunk
         std     dmpkg_chunk
         ldd     #DMPKG_WEND
-        pshs    u
+        pshs    x
         subd    ,s++
         cmpd    dmpkg_chunk
         bls     @set_chunk
         ldd     dmpkg_chunk
 @set_chunk
         std     dmpkg_chunk
-        tfr     d,y                     ; Y = bytes to copy now
         ldd     dmpkg_left+1            ; dmpkg_left -= chunk
         subd    dmpkg_chunk
         std     dmpkg_left+1
@@ -771,71 +773,75 @@ dmpkg_copy
         dec     dmpkg_left
 @chk_odd
         ldb     dmpkg_off+1             ; odd offset: pick up the 2nd byte first
-        bitb    #1
-        beq     @even
-        lda     1,x
-        sta     ,u+
-        leay    -1,y
-@even   tfr     y,d                     ; split the chunk into 32-byte groups
-        andb    #31                     ; and a 0-31 byte tail
-        clra
-        exg     d,y                     ; Y = tail, D = chunk (0-512)
-        lslb                            ; A = D/32 (D < 1024, so D<<3 >> 8)
-        rola
+        lsrb
+        bcc     @whole
+        lda     1,y
+        sta     ,x+
+        ldd     dmpkg_chunk             ; D = bytes left to copy now
+        subd    #1
+        bra     @split
+@whole  ldd     dmpkg_chunk
+@split  pshs    b                       ; bits 0-4: the 0-31 byte tail
+        lslb                            ; A = D/32 = passes (D < 1024, so
+        rola                            ; D<<3 >> 8)
         lslb
         rola
         lslb
         rola
-        sta     dmpkg_n
         beq     @w2
-        leau    16,u                    ; mid-group: offsets -16..14 fit 5 bits
-; @w32: copy 32 bytes per pass, 16 x (ldd ,x / std n,u), then the next group
-@w32    ldd     ,x
-        std     -16,u
-        ldd     ,x
-        std     -14,u
-        ldd     ,x
-        std     -12,u
-        ldd     ,x
-        std     -10,u
-        ldd     ,x
-        std     -8,u
-        ldd     ,x
-        std     -6,u
-        ldd     ,x
-        std     -4,u
-        ldd     ,x
-        std     -2,u
-        ldd     ,x
-        std     ,u
-        ldd     ,x
-        std     2,u
-        ldd     ,x
-        std     4,u
-        ldd     ,x
-        std     6,u
-        ldd     ,x
-        std     8,u
-        ldd     ,x
-        std     10,u
-        ldd     ,x
-        std     12,u
-        ldd     ,x
-        std     14,u
-        leau    32,u
-        dec     dmpkg_n
+        ldb     #16                     ; X = mid-group: offsets -16..14 fit
+        abx                             ; 5 bits
+        lslb                            ; B = 32 for ABX
+; Partially unrolled transfer loop (32 bytes per iteration)
+@w32    ldu     ,y
+        stu     -16,x
+        ldu     ,y
+        stu     -14,x
+        ldu     ,y
+        stu     -12,x
+        ldu     ,y
+        stu     -10,x
+        ldu     ,y
+        stu     -8,x
+        ldu     ,y
+        stu     -6,x
+        ldu     ,y
+        stu     -4,x
+        ldu     ,y
+        stu     -2,x
+        ldu     ,y
+        stu     ,x
+        ldu     ,y
+        stu     2,x
+        ldu     ,y
+        stu     4,x
+        ldu     ,y
+        stu     6,x
+        ldu     ,y
+        stu     8,x
+        ldu     ,y
+        stu     10,x
+        ldu     ,y
+        stu     12,x
+        ldu     ,y
+        stu     14,x
+        abx
+        deca
         bne     @w32
-        leau    -16,u                   ; U back to the next free byte
-@w2     cmpy    #2
-        blo     @w1
-        ldd     ,x
-        std     ,u++
-        leay    -2,y
-        bra     @w2
-@w1     leay    ,y
-        beq     @adv
-        lda     ,x                      ; odd tail: 1st byte of the next pair
-        sta     ,u+
+        leax    -16,x                   ; X back to the next free byte
+@w2     ldb     ,s                      ; pairs in the tail
+        andb    #%00011110
+        beq     @w1
+        lsrb
+@w2loop ldu     ,y
+        stu     ,x++
+        decb
+        bne     @w2loop
+@w1     puls    b
+        lsrb                            ; odd tail: 1st byte of the next pair
+        bcc     @adv
+        lda     ,y
+        sta     ,x+
 @adv    ldd     dmpkg_off               ; advance stream position
         addd    dmpkg_chunk
         cmpd    #512
