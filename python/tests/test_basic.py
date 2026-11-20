@@ -8,7 +8,7 @@ import sys
 
 from harness import *  # noqa: F401,F403  (the model, the machine, helpers)
 
-# Lines from a tokenized program saved on a real CoCo (ROBOCOP.BAS): text as
+# Lines from a game's BASIC loader, tokenized and saved on a real CoCo: text as
 # LIST shows it, then the bytes on the disk
 BASIC_REAL = [
     ('LINEINPUT"START AT WHICH LEVEL? (1-6) ";A$:IF A$="" THEN 1810',

@@ -80,11 +80,11 @@ What the repacks and the hardware taught us, and what was tried and dropped.
 
 ### Placement can break load order
 
-Placement is *first fit*: each asset takes the first gap it fits in. A small asset can land in an earlier gap, left by `align: true` or before track 17 on a disk, and then it's out of load order. The Contras repack's disk map shows `SP14`, `MUSIC` and pieces of `FIRQ.BIN` and `CONTRAS.BIN` packed into tracks 14–15 ahead of where they load, which costs it ten-odd restarts per load. `dmpkg list --map` makes this easy to see.
+Placement is *first fit*: each asset takes the first gap it fits in. A small asset can land in an earlier gap, left by `align: true` or before track 17 on a disk, and then it's out of load order. One 300K repack's disk map showed a handful of small assets packed into tracks 14–15, ahead of where they load, which cost it ten-odd restarts per load. `dmpkg list --map` makes this easy to see.
 
 ### A big asset can blow up the image
 
-Robocop's 112K of game data, as one asset, didn't fit the space before track 17, so it went after it. That pushed the image past 720 sectors, padded it to 737,792 bytes, left 60K before track 17 empty, and put the last chunk first in the image (a restart). As seven 16K assets, they pack before and after track 17: a plain 161,280-byte disk, streamed in order.
+In one repack, 112K of game data as one asset didn't fit the space before track 17, so it went after it. That pushed the image past 720 sectors, padded it to 737,792 bytes, left 60K before track 17 empty, and put the last chunk first in the image (a restart). As seven 16K assets, they pack before and after track 17: a plain 161,280-byte disk, streamed in order.
 
 ### Reading too fast breaks loads
 
@@ -98,9 +98,9 @@ These come up as ways to speed up loading. Each was measured or worked through f
 
 **Compression.** It pays off when the medium is slow and the CPU waits for it, as with tape or floppy. With the SDC it's the other way round: the CPU is the bottleneck, and it spends about 5.7 cycles on each byte the stream delivers. A load of N bytes compressed to a fraction r of its size takes about r × N × 5.7 cycles to stream, plus N × D to unpack, where D is the decompressor's cycles per output byte. That only beats N × 5.7 if D < (1 − r) × 5.7. At r = 0.5, the decompressor would need under 2.9 cycles per byte, less than a single 6809 load and store, and real LZ-style decompressors take several times the copy's 5.7. Compression could only help if the SDC itself were the limit (a `BLOCK MS` far above the copy's CPU time), and then only by the share of time the card spends filling its buffer. It would also need a buffer to unpack from, which phys loads and the MMU window make awkward.
 
-**Fill blocks** (storing a run of one byte as a length). Of the three repacks, only Robocop has much: 22K of `$FF` runs in 128K. Skipping them saves about 43 blocks of streaming, but the CPU still has to write those bytes, so the net gain is a few tenths of a second. That isn't worth a new asset type in the format, the packer and the runtime.
+**Fill blocks** (storing a run of one byte as a length). Only one repack had much: 26K of `$FF` runs in 128K, all at the ends of 16K banks. Skipping them saves about 52 blocks of streaming, but the CPU still has to write those bytes, so the net gain is a few tenths of a second. That isn't worth a new asset type in the format, the packer and the runtime.
 
-**Jumping into the unrolled loop for the tail** (Duff's device). It replaces the loop for the 0–31 leftover bytes of a chunk. Measured on whole loads: −0.19% on Contras and +0.06% on Robocop, for 13 more bytes of runtime. The leftover bytes are too small a share of the time.
+**Jumping into the unrolled loop for the tail** (Duff's device). It replaces the loop for the 0–31 leftover bytes of a chunk. Measured on whole loads of two repacks: −0.19% on one and +0.06% on the other, for 13 more bytes of runtime. The leftover bytes are too small a share of the time.
 
 **Stack blasting.** `PULU`/`PULS` read consecutive addresses, but the SDC's data is always at `$FF4A`/`$FF4B`, so the reads can't be blasted. Blasting the writes (`PSHU` of D, X and Y) would save about a quarter of the copy's cycles. But pushes fill memory downwards, so the packer would have to store every asset reversed in 6-byte groups. The three loads back to back would also read the SDC about twice as fast, which is the pattern that already breaks 6309 native mode.
 
@@ -109,8 +109,8 @@ These come up as ways to speed up loading. Each was measured or worked through f
 ### What did help
 
 - **CPU speed:** Rick on real hardware loads in about 6 seconds at 0.89 MHz and about 4 at 1.79 MHz.
-- **Cutting work out of the copy loop:** X as the destination, U carrying the data, A counting passes in place of a memory counter, and `ABX` to step to the next 32 bytes. Together those took about 3.4% off whole loads (Contras 4,342,590 → 4,196,826 cycles), and the runtime got a byte smaller.
-- **Sizing assets to the disk:** Robocop's seven 16K assets in place of one 112K one (above).
+- **Cutting work out of the copy loop:** X as the destination, U carrying the data, A counting passes in place of a memory counter, and `ABX` to step to the next 32 bytes. Together those took about 3.4% off whole loads (one 300K load went from 4,342,590 to 4,196,826 cycles), and the runtime got a byte smaller.
+- **Sizing assets to the disk:** seven 16K assets in place of one 112K one (above).
 
 ## Measure before you optimise
 
