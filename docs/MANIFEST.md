@@ -26,7 +26,7 @@ This builds a bare stream image that the program mounts as `M:GAME.SDS` (the ima
 
 ```yaml
 project:
-  name: Demo                       # stored in the image header (16 characters)
+  title: Demo                      # stored in the image header (16 characters)
   image: build/DEMO.DSK            # output image (required)
   sdc_path: GAMES/DEMO.DSK         # mount by this path (optional with disk:)
   equates: build/assets.inc        # lwasm include: EQUs only
@@ -71,7 +71,7 @@ Other top-level keys are ignored, so you can keep your own data (YAML anchors, n
 | key | default | meaning |
 |---|---|---|
 | `image` | **required** | Output image file. Use `.SDS` for a bare stream image and `.DSK` for a disk image; dmpkg doesn't care, but people and emulators do. |
-| `name` | `PROJECT` | Project name, stored in the header as ASCII. Only the first 16 characters are kept, and non-ASCII characters become `?`. `dmpkg list` shows it. |
+| `title` | `PROJECT` | The project's title, stored in the header as ASCII. Only the first 16 characters are kept, and non-ASCII characters become `?`. `dmpkg list` shows it; nothing else uses it. |
 | `sdc_path` | the image's file name | Where the image lives on the SD card, for the mount name (see [Mount name](#mount-name)). With `disk:` it's optional, and leaving it out means no mount at all. |
 | `equates` | none | Path of the equates include (EQUs only). Optional, but programs need it. |
 | `table` | none | Path of the table include (mount name, build_id, descriptors). Optional, but programs need it. |

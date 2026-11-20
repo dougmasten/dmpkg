@@ -38,7 +38,7 @@ block T ..          asset data, placed first-fit in manifest order
 | 10 | 3 | blocks | total image size in blocks |
 | 13 | 1 | flags | `$01` disk image (also a DECB disk), else `$00`; other bits reserved |
 | 14 | 2 | reserved | `$00 $00` |
-| 16 | 16 | name | project name, ASCII, space-padded, not terminated |
+| 16 | 16 | title | `project.title`, ASCII, space-padded, not terminated |
 
 `dmpkg_open` checks the magic (bytes 0–3) against `DMPKG_MAGIC` from the generated `assets.inc`, and `build_id` (bytes 4–7) against `DMPKG_BuildID` from the generated `assettab.asm`, so a file that isn't a dmpkg image, or a program built against a different image, fails with error 4. Both checks are skipped when `dmpkg_open` is given Y = 0. The other header fields aren't checked: the TOC, and through its CRCs the data, are already covered by `build_id`.
 

@@ -3,7 +3,7 @@
 # mounts HWTEST.SDS by name and finally HWTEST.DSK again. See docs/HWTEST.md.
 
 project:
-  name: HWTEST
+  title: HWTEST
   image: build/HWTEST.DSK
   equates: build/disk/assets.inc
   table: build/disk/assettab.asm

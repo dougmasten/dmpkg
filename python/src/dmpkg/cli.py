@@ -32,11 +32,11 @@ def cmd_list(path, show_map=False, names_from=None):
         if not h["flags"] & H_DISK:
             raise PackError(f"{path} is a stream image, not a DECB disk: no disk map")
         names = report_names(names_from) if names_from else []
-        print(f"{h['name']}  build ${h['build_id']:08X}  {path}")
+        print(f"{h['title']}  build ${h['build_id']:08X}  {path}")
         print()
         print("\n".join(disk_map(img, h, ents, names)))
         return
-    print(f"{h['name']}  build ${h['build_id']:08X}  "
+    print(f"{h['title']}  build ${h['build_id']:08X}  "
           f"{h['blocks']} blocks  TOC {toc_size(h['count'])[1]}"
           + ("  DECB disk" if h["flags"] & H_DISK else ""))
     if h["flags"] & H_DISK:

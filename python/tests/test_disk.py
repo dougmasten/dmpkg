@@ -58,7 +58,7 @@ def disk_layout_test():
                   {"name": "next", "file": "next.bin", "phys": 0x40000},
                   {"name": "gapfill", "file": "gapfill.bin", "load": 0x6000},
                   {"name": "huge", "file": "huge.bin", "phys": 0x60000}]
-        doc = {"project": {"name": "Layout", "image": "L.DSK", "equates": "assets.inc",
+        doc = {"project": {"title": "Layout", "image": "L.DSK", "equates": "assets.inc",
                            "table": "assettab.asm", "disk": {"loader": "tiny.bin"}},
                "assets": assets}
         man = os.path.join(td, "p.yaml")
@@ -178,9 +178,35 @@ def output_dirs_test():
     return check(len(made) == len(outs), f"output folders created for {made}")
 
 
+def title_test():
+    """project.title goes in the header, PROJECT without one; the old key,
+    name, is an unknown key now."""
+    results = []
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "a.bin"), "wb") as f:
+            f.write(bytes(300))
+        path = os.path.join(td, "p.yaml")
+        for proj, want in (({"title": "Space Game"}, "Space Game"),
+                           ({}, "PROJECT"),
+                           ({"name": "Old Key"}, None)):
+            with open(path, "w") as f:
+                yaml.safe_dump({"project": dict(proj, image="G.SDS"),
+                                "assets": [{"name": "a", "file": "a.bin", "load": 0x4000}]}, f)
+            try:
+                pack.build(path)
+                got = image.read_image(os.path.join(td, "G.SDS"))[1]["title"]
+            except PackError as e:
+                got = None
+                err = str(e)
+            ok = got == want and (want is not None or "unknown key(s) ['name']" in err)
+            results.append(check(ok, f"project {proj} -> header title {got!r}"))
+    return all(results)
+
+
 def run():
     ok = disk_layout_test()
     ok &= output_dirs_test()
+    ok &= title_test()
     return ok
 
 if __name__ == "__main__":

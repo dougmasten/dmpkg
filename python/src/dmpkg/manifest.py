@@ -15,7 +15,7 @@ from . import decb
 from .errors import PackError
 from .image import MIN_IMAGE, Asset
 
-KNOWN_PROJECT = {"name", "image", "sdc_path", "equates", "table", "map", "prefix",
+KNOWN_PROJECT = {"title", "image", "sdc_path", "equates", "table", "map", "prefix",
                  "min_size", "pad_byte", "disk"}
 KNOWN_DISK = {"loader", "autoexec", "tokenize", "reserve", "data"}
 KNOWN_ASSET = {"name", "file", "type", "load", "phys", "align"}
@@ -25,7 +25,7 @@ KNOWN_ASSET = {"name", "file", "type", "load", "phys", "align"}
 class Project:
     path: str                 # the manifest file
     base: str                 # folder its relative paths start from
-    name: str
+    title: str                # stored in the image header
     image: str                # output image, as the manifest gives it
     mount: str | None         # SDC path to mount by, None: already mounted (disk)
     prefix: str
@@ -121,7 +121,7 @@ def load(path: str, loader: bool = True) -> tuple[Project, list[Asset]]:
 
 def _project(path: str, proj: dict, with_loader: bool) -> Project:
     base = os.path.dirname(os.path.abspath(path))
-    name = str(proj.get("name", "PROJECT"))
+    title = str(proj.get("title", "PROJECT"))
     image = proj.get("image")
     if not image:
         raise PackError("project.image is required (e.g. MYGAME.SDS)")
@@ -174,7 +174,7 @@ def _project(path: str, proj: dict, with_loader: bool) -> Project:
             raise PackError(f"project.disk.data: {'.'.join(data)} is already "
                             "the loader or AUTOEXEC.BAS")
 
-    return Project(path=path, base=base, name=name, image=image, mount=mount,
+    return Project(path=path, base=base, title=title, image=image, mount=mount,
                    prefix=prefix, min_size=min_size, pad_byte=pad_byte,
                    disk=disk is not False, loader=loader, autoexec=autoexec, tokenize=tokenize,
                    reserve=reserve, data=data,

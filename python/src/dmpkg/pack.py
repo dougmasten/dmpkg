@@ -30,7 +30,7 @@ def build(manifest_path: str, verbose=False, loader=True) -> dict:
         img[a.pos:a.pos + len(a.data)] = a.data
     toc = image.toc(assets)
     build_id = image.build_id(toc)
-    hdr = image.header(project.name, len(assets), build_id, blocks, project.disk)
+    hdr = image.header(project.title, len(assets), build_id, blocks, project.disk)
     img[0:toc_bytes] = hdr + toc
     img[toc_bytes:data0] = bytes(data0 - toc_bytes)
 

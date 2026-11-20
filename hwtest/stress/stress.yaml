@@ -4,7 +4,7 @@
 # over and over, checking each one's checksum, until a key is pressed.
 
 project:
-  name: STRESS
+  title: STRESS
   image: build/STRESS.DSK
   equates: build/assets.inc
   table: build/assettab.asm

@@ -65,7 +65,7 @@ def report(project: Project, assets: list[Asset], build_id: int, size: int, end:
     """Layout report: image summary, then one row per asset."""
     blocks = size // BLOCK
     mount = project.mount
-    lines = [f"dmpkg: {project.name}  ->  {project.image}",
+    lines = [f"dmpkg: {project.title}  ->  {project.image}",
              f"  mount   {'M:' + mount if mount else 'none (DECB disk, already mounted)'}",
              f"  size    {size} bytes = {blocks} blocks ({end} used, TOC {toc_blocks} block(s))",
              f"  build   ${build_id:08X}"]

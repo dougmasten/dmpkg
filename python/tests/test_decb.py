@@ -45,7 +45,7 @@ def decb_word_fail_test():
             f.write(b"\x00" + len(seg).to_bytes(2, "big") + b"\x30\x00" + seg
                     + b"\xff\x00\x00\x30\x00")
         with open(os.path.join(td, "p.yaml"), "w") as f:
-            f.write("project:\n  name: Fail\n  image: F.SDS\n  sdc_path: F.SDS\n"
+            f.write("project:\n  title: Fail\n  image: F.SDS\n  sdc_path: F.SDS\n"
                     "  equates: assets.inc\n  table: assettab.asm\n"
                     "assets:\n  - {name: pad, file: pad.bin, load: 0x6000}\n"
                     "  - {name: code, file: code.bin, type: decb}\n")

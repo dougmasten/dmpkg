@@ -3,7 +3,7 @@
 # include them next to their own. See docs/HWTEST.md.
 
 project:
-  name: HWTEST stream
+  title: HWTEST stream
   image: build/HWTEST.SDS
   sdc_path: HWTEST.SDS
   prefix: S_

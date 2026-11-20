@@ -5,7 +5,7 @@
 # same checks as HWTEST.BIN, plus TAIL. See docs/HWTEST.md.
 
 project:
-  name: HWBIG
+  title: HWBIG
   image: build/HWBIG.DSK
   equates: build/big/assets.inc
   table: build/big/assettab.asm

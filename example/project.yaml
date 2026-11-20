@@ -1,7 +1,7 @@
 # dmpkg project manifest
 
 project:
-  name: Demo
+  title: Demo
   image: build/DEMO.DSK        # one file: copy to the SD card, DRIVE 0,"DEMO.DSK"
   equates: build/assets.inc    # EQUs only
   table: build/assettab.asm    # mount name, build_id, descriptors

@@ -78,11 +78,11 @@ def build_id(toc_entries: bytes) -> int:
     return zlib.crc32(toc_entries)
 
 
-def header(name: str, count: int, build_id: int, blocks: int, disk: bool) -> bytes:
+def header(title: str, count: int, build_id: int, blocks: int, disk: bool) -> bytes:
     hdr = (MAGIC + struct.pack(">I", build_id)
            + struct.pack(">H", count) + blocks.to_bytes(3, "big")
            + bytes([H_DISK if disk else 0]) + bytes(2)                      # bytes 14-15 reserved
-           + name.encode("ascii", "replace")[:16].ljust(16, b" "))
+           + title.encode("ascii", "replace")[:16].ljust(16, b" "))
     assert len(hdr) == HDR_SIZE
     return hdr
 
@@ -92,11 +92,11 @@ def read_image(path: str):
     with open(path, "rb") as f:
         img = f.read()
     if len(img) < HDR_SIZE or img[:4] != MAGIC:
-        raise PackError(f"{path}: not an dmpkg image")
+        raise PackError(f"{path}: not a dmpkg image")
     bid, count = struct.unpack_from(">IH", img, 4)
     flags = img[13]
     blocks = int.from_bytes(img[10:13], "big")
-    name = img[16:32].decode("ascii", "replace").rstrip()
+    title = img[16:32].decode("ascii", "replace").rstrip()
     ents = []
     for i in range(count):
         e = img[HDR_SIZE + i * TOC_ENTRY: HDR_SIZE + (i + 1) * TOC_ENTRY]
@@ -104,4 +104,4 @@ def read_image(path: str):
                          length=int.from_bytes(e[5:8], "big"), flags=e[8],
                          dest=int.from_bytes(e[9:12], "big"), crc=struct.unpack(">I", e[12:16])[0]))
     return img, dict(flags=flags, count=count, build_id=bid, blocks=blocks,
-                     name=name), ents
+                     title=title), ents
