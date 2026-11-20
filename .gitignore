@@ -23,7 +23,8 @@ hwtest/*/assets/
 .idea/
 
 # Game repacks: original disks and everything built from them
-repacks/*/bin/
+repacks/*/bin/*
+!repacks/*/bin/README.md
 repacks/*/extracted/
 repacks/*/assets/
 repacks/*/project.yaml
