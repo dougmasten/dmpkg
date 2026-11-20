@@ -21,3 +21,9 @@ hwtest/assets/
 .DS_Store
 .vscode/
 .idea/
+
+# Game repacks: original disks and everything built from them
+repacks/*/bin/
+repacks/*/extracted/
+repacks/*/assets/
+repacks/*/project.yaml
