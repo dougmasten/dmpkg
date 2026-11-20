@@ -24,7 +24,7 @@ dmpkg list --map build/DEMO.DSK --names build/DEMO.map   # track-by-track disk m
 
 `example/Makefile` runs the steps of a [two-pass build](docs/DISK.md#two-pass-build): `mkassets.py` writes the example's assets (random filler, fixed seed), `dmpkg build` writes the include files, lwasm assembles `loader.asm` against them, and a second `dmpkg build` puts the loader on the disk. It runs the package straight from `python/src/`, so it works without installing.
 
-`dmpkg tokenize PROG.TXT PROG.BAS` turns an ASCII BASIC program into a tokenized one, the way the CoCo 3 ROM would, and `dmpkg detokenize PROG.BAS` lists one. See [docs/DISK.md](docs/DISK.md#basic-programs).
+`dmpkg tokenize PROG.TXT PROG.BAS` turns an ASCII BASIC program into a tokenized one, the way the CoCo 3 ROM would (`--uppercase` for one written in lower case), and `dmpkg detokenize PROG.BAS` lists one. See [docs/DISK.md](docs/DISK.md#basic-programs).
 
 A loader calls `dmpkg_init` once, then `dmpkg_open` and `dmpkg_load` for each asset: see [docs/RUNTIME.md](docs/RUNTIME.md) for the calls and a code example, and `example/loader.asm` for a complete loader.
 

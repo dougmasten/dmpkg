@@ -5,7 +5,7 @@ Usage:
   dmpkg build project.yaml [-v]
   dmpkg list  IMAGE [--map [--names REPORT]]
   dmpkg verify IMAGE
-  dmpkg tokenize PROGRAM.TXT OUT.BAS [--base ADDR]
+  dmpkg tokenize PROGRAM.TXT OUT.BAS [--base ADDR] [--uppercase]
   dmpkg detokenize PROGRAM.BAS [OUT.TXT]
 
 (or python -m dmpkg ...)
@@ -180,6 +180,8 @@ def main(argv=None):
     t.add_argument("output")
     t.add_argument("--base", type=lambda s: int(s, 0), default=basic.BASE,
                    help="address the line links are made for (default 0x2601)")
+    t.add_argument("--uppercase", action="store_true",
+                   help="upper-case the program outside quotes, REM, ' and DATA")
     d = sub.add_parser("detokenize", help="tokenized .BAS file -> ASCII listing")
     d.add_argument("program")
     d.add_argument("output", nargs="?", help="default: print it")
@@ -191,7 +193,17 @@ def main(argv=None):
             cmd_list(args.image, args.map, args.names)
         elif args.cmd == "tokenize":
             with open(args.source, encoding="latin-1") as f:
-                prog = basic.tokenize(f.read(), args.base)
+                text = f.read()
+            prog = basic.tokenize(text, args.base, args.uppercase)
+            lower = [] if args.uppercase else basic.lowercase_lines(text)
+            if lower:
+                many = len(lower) > 1
+                nums = ", ".join(map(str, lower[:10]))
+                more = f" (+{len(lower) - 10} more)" if len(lower) > 10 else ""
+                print(f"dmpkg: warning: {args.source}: lower case outside quotes, REM and DATA "
+                      f"in line{'s' if many else ''} {nums}{more}: keywords are upper case only, "
+                      f"so {'these lines' if many else 'it'} will give ?SN ERROR "
+                      f"(--uppercase to fix)", file=sys.stderr)
             with open(args.output, "wb") as f:
                 f.write(prog)
         elif args.cmd == "detokenize":

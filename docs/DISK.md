@@ -47,15 +47,15 @@ Mask IRQ and FIRQ (`orcc #$50`) before `dmpkg_init`. After `LOADM`, Disk BASIC's
 `AUTOEXEC.BAS` is written as a tokenized program, the same bytes a `SAVE` would leave, unless `disk.tokenize` is `false` (then it's ASCII, which Disk BASIC tokenizes as it loads it). The tokenizer is also a command:
 
 ```sh
-dmpkg tokenize PROG.TXT PROG.BAS [--base 0x2601]   # ASCII program -> tokenized file
-dmpkg detokenize PROG.BAS [PROG.TXT]               # tokenized file -> listing
+dmpkg tokenize PROG.TXT PROG.BAS [--base 0x2601] [--uppercase]   # ASCII program -> tokenized file
+dmpkg detokenize PROG.BAS [PROG.TXT]                             # tokenized file -> listing
 ```
 
 It follows the CoCo 3 ROM's tokenizer (Color BASIC's crunch routine with Super Extended BASIC's patch, per William Astle's disassemblies), so a program comes out as if it had been typed in:
 
 - Keywords are tried at each position in table order, all commands first (Color, Extended, Disk 1.1, Super Extended), then all functions. The first match wins, so `LOCATE` is one command, not `LOC` plus `ATE`.
 - Once a letter starts a variable name, the letters and digits after it aren't searched: `SCORE` stays `SCORE` (toolshed's `decb -t` makes it `SC OR E`), but `FORT` is `FOR` `T`.
-- `?` is `PRINT`, `'` is stored as `:` and the `'` token, and `ELSE` gets a `:` in front. Text in quotes, after `REM` or `'`, and after `DATA` up to the next `:` is kept as typed. Keywords are upper case only.
+- `?` is `PRINT`, `'` is stored as `:` and the `'` token, and `ELSE` gets a `:` in front. Text in quotes, after `REM` or `'`, and after `DATA` up to the next `:` is kept as typed. Keywords are upper case only: a lower-case `print` is stored as letters, as the CoCo would, and stops with `?SN ERROR` when it runs, so `dmpkg tokenize` warns about any line with lower case outside quotes, `REM` and `DATA`. With `--uppercase` it reads that lower case as upper case instead, and leaves the text in quotes, `REM`, `'` and `DATA` as typed.
 - Lines are sorted by number, a repeated number replaces the earlier line, and a number on its own deletes it.
 
 The file is `$FF`, a 2-byte length, then each line (next-line address, line number, tokens, `$00`) and `$00 $00`. The next-line addresses assume the program sits at `--base`: `$2601` is where Disk BASIC puts it with the usual `PCLEAR 4`, as in a `SAVE` from a stock machine.

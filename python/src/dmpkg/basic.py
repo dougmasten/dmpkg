@@ -58,15 +58,17 @@ BASE = 0x2601
 MAX_LINE = 63999
 
 
-def crunch(text: str) -> bytes:
+def crunch(text: str, upper: bool = False) -> bytes:
     """One line's text (after the line number) -> its tokens, without the
-    terminating $00."""
+    terminating $00. upper: read a-z as A-Z, except in the text kept as typed
+    (quotes, REM, ' and DATA)."""
     src = text.encode("latin-1")
+    key = src.upper() if upper else src             # what keywords and names see
     out = bytearray()
     i, n = 0, len(src)
     alpha = data = False
     while i < n:
-        c = src[i]
+        c = key[i]
         i += 1
         if alpha:                                   # inside a variable name
             if 0x41 <= c <= 0x5A or 0x30 <= c <= 0x39:
@@ -84,7 +86,7 @@ def crunch(text: str) -> bytes:
             i = j
             continue
         if data or 0x30 <= c <= 0x3B:               # DATA text; digits, : and ;
-            out.append(c)
+            out.append(src[i - 1])
             if c == 0x3A:
                 data = False                        # : ends DATA (and a name)
             continue
@@ -94,7 +96,7 @@ def crunch(text: str) -> bytes:
         if c == 0x27:                               # ' = : REM, rest as typed
             out += bytes([0x3A, T_QUOTE]) + src[i:]
             break
-        tok = _match(src, i - 1)
+        tok = _match(key, i - 1)
         if tok is None:                             # not a keyword: copy one
             out.append(c)
             alpha = 0x41 <= c <= 0x5A
@@ -151,17 +153,42 @@ def parse_lines(text: str) -> dict[int, str]:
     return dict(sorted(lines.items()))
 
 
-def tokenize(text: str, base: int = BASE) -> bytes:
-    """ASCII program text -> a tokenized program file ($FF, length, lines)."""
+def tokenize(text: str, base: int = BASE, upper: bool = False) -> bytes:
+    """ASCII program text -> a tokenized program file ($FF, length, lines).
+    upper: upper-case the program outside quotes, REM, ' and DATA first."""
     prog = bytearray()
     for num, body in parse_lines(text).items():
-        toks = crunch(body)
+        toks = crunch(body, upper)
         if len(toks) > 249:
             raise PackError(f"BASIC line {num} is too long ({len(toks)} bytes tokenized)")
         nxt = base + len(prog) + 4 + len(toks) + 1
         prog += nxt.to_bytes(2, "big") + num.to_bytes(2, "big") + toks + b"\0"
     prog += b"\0\0"
     return b"\xff" + len(prog).to_bytes(2, "big") + bytes(prog)
+
+
+def lowercase_lines(text: str) -> list[int]:
+    """Line numbers with lower-case letters where the ROM would look for
+    keywords and names: outside quotes, REM, ' and DATA. Keywords are upper
+    case only, so such a line stops with ?SN ERROR when it runs."""
+    bad = []
+    for num, body in parse_lines(text).items():
+        quoted = data = False
+        for c in crunch(body):
+            if c == 0x22:
+                quoted = not quoted
+            elif quoted:
+                continue
+            elif c in (T_REM, T_QUOTE):
+                break
+            elif c == T_DATA:
+                data = True
+            elif c == 0x3A:
+                data = False
+            elif not data and 0x61 <= c <= 0x7A:
+                bad.append(num)
+                break
+    return bad
 
 
 def detokenize(data: bytes) -> str:

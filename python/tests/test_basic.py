@@ -61,6 +61,17 @@ def basic_test():
                    for i, (t, _) in enumerate(BASIC_REAL))
     results.append(check(basic.detokenize(basic.tokenize(text)) == text,
                          "detokenize lists the lines back as typed (: before ' and ELSE hidden)"))
+    lower = basic.lowercase_lines('10 print "x"\n20 PRINT "abc":REM low\n30 \'note\n'
+                                  '40 DATA a,b:x=1\n50 DATA a,b\n60 A=1:b=2\n')
+    results.append(check(lower == [10, 40, 60],
+                         "lower case flagged outside quotes, REM, ' and DATA"
+                         + ("" if lower == [10, 40, 60] else f" (got {lower})")))
+    up = basic.crunch('print "x":a=1:data a,b:x=y \'note', upper=True)
+    want = basic.crunch('PRINT "x":A=1:DATA a,b:X=Y \'note')
+    results.append(check(up == want, "upper: keywords and names upper-cased, quotes, DATA and ' "
+                         "kept as typed" + ("" if up == want else f" (got {up.hex()})")))
+    results.append(check(basic.tokenize("10 rem Hi\n20 goto 10", upper=True)
+                         == basic.tokenize("10 REM Hi\n20 GOTO 10"), "upper: REM kept as typed"))
     results.append(check(decb.autoexec("LOADER", "BIN") == ("AUTOEXEC", "BAS", AUTOEXEC_TOK)
                          and decb.autoexec("LOADER", "BIN", False)[2]
                          == b'10 LOADM"LOADER.BIN":EXEC\r',
