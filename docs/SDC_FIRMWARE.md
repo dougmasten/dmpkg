@@ -1,6 +1,6 @@
 # CoCo SDC firmware versions
 
-What each CoCo SDC MCU firmware version added, and which of those features dmpkg relies on. `dmpkg_init` returns the version in BCD (and keeps it in `dmpkg_ver`), so 1.17 comes back as `$0117` (the version command answers `$01` in `$FF4A` and `$17` in `$FF4B`).
+What each CoCo SDC MCU firmware version added, and which of those features dmpkg relies on. `dmpkg_init` returns the version in BCD (and keeps it in `dmpkg_ver`), so 1.17 comes back as `$0117`.
 
 The firmware entries come from the official `Changes.pdf` that ships with each firmware package. They're quoted closely, with notes from a disassembly of the MCU firmware where it shows more. SDC-DOS (the Disk BASIC in the controller's flash) has its own version numbers and is listed separately.
 
