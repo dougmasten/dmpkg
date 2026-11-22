@@ -420,15 +420,12 @@ dmpkg_load
         sta     dmpkg_left+2
         lda     dmpkg_desc.flags,x      ; DMPKG_F_PHYS is bit 7
         bmi     @phys
-        pshs    u
-        ldu     dmpkg_desc.dest+1,x
+        ldx     dmpkg_desc.dest+1,x
         jsr     dmpkg_copy
-        puls    u
         bcs     @error
         bra     @ok
 ; CoCo 3 physical load through the MMU window
-@phys   pshs    u
-        lda     DMPKG_MMUREG            ; window block before the load, put
+@phys   lda     DMPKG_MMUREG            ; window block before the load, put
         sta     dmpkg_msave             ; back after it
         ldd     dmpkg_desc.dest,x       ; block = dest >> 13: A:B = bits 23-8,
         lslb                            ; shifted left 3 leaves bits 20-13 in A
@@ -442,7 +439,7 @@ dmpkg_load
         ldd     dmpkg_desc.dest+1,x     ; window offset = dest & $1FFF
         anda    #$1F
         addd    #DMPKG_WINDOW
-        tfr     d,u
+        tfr     d,x
         sta     dmpkg_phys              ; nonzero (window is never in page 0)
         jsr     dmpkg_copy
         pshs    a,cc
@@ -450,7 +447,6 @@ dmpkg_load
         sta     DMPKG_MMUREG
         clr     dmpkg_phys
         puls    a,cc
-        puls    u
         bcs     @error
         bra     @ok
 ; decb records: [len.w addr.w data]... [0000 exec.w]
@@ -462,7 +458,7 @@ dmpkg_load
         beq     @decb_end
         jsr     dmpkg_getword           ; D = load address
         bcs     @error
-        tfr     d,u
+        tfr     d,x
         jsr     dmpkg_copy
         bcs     @error
         bra     @decb_loop
@@ -688,31 +684,29 @@ dmpkg_nextblk
 
 ;------------------------------------------------------------------------------
 ; Function    : dmpkg_copy
-; Entry       : Reg U = destination
+; Entry       : Reg X = destination
 ;             : dmpkg_left  = bytes to copy (24-bit)
-;             : dmpkg_phys  = nonzero if U is in the MMU window (dmpkg_mblk mapped)
-; Exit        : CC.C clear: U advanced past the data
+;             : dmpkg_phys  = nonzero if X is in the MMU window (dmpkg_mblk mapped)
+; Exit        : CC.C clear: X advanced past the data
 ;             : CC.C set  : A = error code
-; Destroys    : A, CC (U advanced)
+; Destroys    : A, CC (X advanced)
 ; Calls       : dmpkg_waitready, dmpkg_nextblk
 ; Description : Copies stream bytes in chunks capped by the end of the block,
 ;             : the bytes left and, for phys loads, the end of the window (the
-;             : next 8K is mapped when it fills). Inside, X is the destination,
+;             : next 8K is mapped when it fills). X is the destination,
 ;             : Y points at the data registers and U carries the data, which
 ;             : leaves A to count the passes of the inner loop: 32 bytes per
 ;             : pass, 16x LDU ,Y / STU n,X.
 ;------------------------------------------------------------------------------
 dmpkg_copy
-        pshs    b,x,y
-        tfr     u,x                     ; X = destination
+        pshs    b,y,u
         ldy     #SDC_DATA
 @loop   lda     dmpkg_left              ; any of the 24-bit count left?
         ora     dmpkg_left+1            ; (OR its three bytes: zero only
         ora     dmpkg_left+2            ; when all of them are)
         bne     @more                   ; yes: copy another chunk
         andcc   #$fe                    ; clear carry (success)
-@exit   tfr     x,u                     ; U = past the data (CC kept)
-        puls    b,x,y,pc
+@exit   puls    b,y,u,pc
 @more   lda     dmpkg_poll              ; new block: wait for the buffer
         beq     @nopoll
         jsr     dmpkg_waitready
