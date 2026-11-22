@@ -16,7 +16,7 @@ The only input is the three original disks in `bin/` (`RICK1.DSK`-`RICK3.DSK`); 
 
 ## How it works
 
-- `extract.py` reads the Disk BASIC directory and FAT of `bin/RICK1-3.DSK` and copies out only the game files, `SPLASH0-3.BIN` and `COMP0000-0049.BIN`, into `extracted/`. The original loader (`RICK.BAS`, `MOVER.BIN`, `CC3X0.BIN`) is not used.
+- `extract.py` reads `bin/RICK1-3.DSK` with dmpkg's DECB reader (`dmpkg.decb.read_files`) and copies out only the game files, `SPLASH0-3.BIN` and `COMP0000-0049.BIN`, into `extracted/`. The original loader (`RICK.BAS`, `MOVER.BIN`, `CC3X0.BIN`) is not used. To look at the disks yourself, `dmpkg decb dir bin/RICK1.DSK,` lists them and `dmpkg decb fstat bin/RICK1.DSK,SPLASH0.BIN` shows a file's load address.
 - `mkassets.py` runs the COMP stream through its own copy of the CC3X0 decompressor and merges the 205 blocks it writes into 44 contiguous physical runs. It writes each run as a raw `phys:` asset, with `SPLASH0-3` as the first asset (pages `$00`-`$03`). It also writes `project.yaml`.
 - `loader.asm` (`RICK.BIN`, at `$1000` in page `$38`, the one page the game doesn't load) loads the splash and shows it, then loads every other asset. After that it recreates the hand-over the original loader left behind and jumps to the game's `Boot` at `$FD00`:
   - page `$38` copied to page `$3E` (MOVER StartGame)

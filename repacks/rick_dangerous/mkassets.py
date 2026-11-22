@@ -23,6 +23,10 @@ Usage: mkassets.py   (run from anywhere; paths are relative to this file)
 import os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# dmpkg's packer: the Makefile puts it on PYTHONPATH; else the repo's copy
+sys.path.append(os.path.join(HERE, '..', '..', 'python', 'src'))
+from dmpkg.decb import parse_loadm         # noqa: E402
+from dmpkg.errors import PackError         # noqa: E402
 EXT = os.path.join(HERE, 'extracted')
 OUT = os.path.join(HERE, 'assets')
 
@@ -30,16 +34,11 @@ SKIP_PAGES = {0x38, 0xFF}       # loader hand-over stubs, see above
 
 
 def loadm(path):
-    """Segments of a LOADM file as [(addr, bytes)]."""
-    d = open(path, 'rb').read(); i = 0; segs = []
-    while i < len(d):
-        t, n, a = d[i], d[i+1] << 8 | d[i+2], d[i+3] << 8 | d[i+4]
-        if t == 0xFF:
-            return segs
-        if t != 0:
-            sys.exit(f'{path}: bad LOADM record')
-        segs.append((a, d[i+5:i+5+n])); i += 5 + n
-    sys.exit(f'{path}: no postamble')
+    """Segments of a LOADM file as [(addr, bytes)] (dmpkg's LOADM reader)."""
+    try:
+        return parse_loadm(open(path, 'rb').read(), path)[0]
+    except PackError as e:
+        sys.exit(str(e))
 
 
 class Bits:

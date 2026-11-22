@@ -14,11 +14,19 @@ Nothing outside this directory is used.
 Each disk is checked against the SHA-256 of the known release first, so a
 different dump or release stops here instead of building a broken image.
 
+Reads the disks with dmpkg's DECB reader (dmpkg.decb.read_files, the one
+behind dmpkg decb copy).
+
 Usage: extract.py   (run from anywhere; paths are relative to this file)
 """
 import hashlib, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# dmpkg's packer: the Makefile puts it on PYTHONPATH; else the repo's copy
+sys.path.append(os.path.join(HERE, '..', '..', 'python', 'src'))
+from dmpkg.decb import read_files          # noqa: E402
+from dmpkg.errors import PackError         # noqa: E402
+
 SRC = os.path.join(HERE, 'bin')
 OUT = os.path.join(HERE, 'extracted')
 
@@ -31,57 +39,14 @@ DISKS = {
 WANT = re.compile(r'^(SPLASH[0-3]|COMP\d{4})\.BIN$')
 EXPECT = {f'SPLASH{n}.BIN' for n in range(4)} | {f'COMP{n:04d}.BIN' for n in range(50)}
 
-SECTOR, SPT, TRACKS = 256, 18, 35
-DIR_TRACK = 17
-
-
-def sector(img, track, sec):
-    """Bytes of one sector (sec is 1-based)."""
-    o = (track * SPT + sec - 1) * SECTOR
-    return img[o:o + SECTOR]
-
-
-def granule(img, g):
-    """Bytes of one 9-sector granule; granules skip the directory track."""
-    track = g // 2
-    if track >= DIR_TRACK:
-        track += 1
-    o = (track * SPT + (g % 2) * 9) * SECTOR
-    return img[o:o + 9 * SECTOR]
-
 
 def files(path):
-    """{name.ext: bytes} for every file on a Disk BASIC image."""
-    img = open(path, 'rb').read()
-    if len(img) != TRACKS * SPT * SECTOR:
-        sys.exit(f'{path}: not a 35-track image ({len(img)} bytes)')
-    fat = sector(img, DIR_TRACK, 2)[:68]
-    dirdata = b''.join(sector(img, DIR_TRACK, s) for s in range(3, 12))
-    out = {}
-    for i in range(0, len(dirdata), 32):
-        e = dirdata[i:i + 32]
-        if e[0] == 0xFF:
-            break
-        if e[0] == 0:
-            continue
-        name = e[0:8].decode('ascii').rstrip() + '.' + e[8:11].decode('ascii').rstrip()
-        g, last = e[13], e[14] << 8 | e[15]
-        data = bytearray(); seen = set()
-        while True:
-            if g >= 68 or g in seen:
-                sys.exit(f'{path}: {name}: bad granule chain')
-            seen.add(g)
-            nxt = fat[g]
-            if nxt >= 0xC0:                       # last granule: low bits = sectors used
-                n = nxt & 0x1F
-                if not 1 <= n <= 9:
-                    sys.exit(f'{path}: {name}: bad last-granule entry ${nxt:02X}')
-                data += granule(img, g)[:(n - 1) * SECTOR + last]
-                break
-            data += granule(img, g)
-            g = nxt
-        out[name] = bytes(data)
-    return out
+    """{name.ext: bytes} for every file on a Disk BASIC image (dmpkg's reader,
+    the same as dmpkg decb copy)."""
+    try:
+        return {f['name']: f['data'] for f in read_files(open(path, 'rb').read(), path)}
+    except PackError as e:
+        sys.exit(str(e))
 
 
 def main():
