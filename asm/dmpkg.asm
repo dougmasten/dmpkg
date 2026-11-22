@@ -85,9 +85,6 @@
 ;                         task 0 one, $FFA0+DMPKG_WINDOW/$2000 ($FFA2 for $4000).
 ;                         Define it for task 1 ($FFA8+...); it must be $FFA0-$FFAF
 ;                         and map the same 8K slot as DMPKG_WINDOW
-;   DMPKG_MMU_HOME        if defined, block restored into DMPKG_MMUREG after a
-;                         phys load; otherwise the value read back before
-;                         the load is restored
 ;   DMPKG_DELAY    12     settle loop before polling READY (8 cyc/pass: ~54us at
 ;                         1.79MHz; the SDC needs ~20us to update READY; 1-65535)
 ;   DMPKG_TIMEOUT  16     poll timeout, units of 65536 polls (1-255)
@@ -433,12 +430,8 @@ dmpkg_load
         bra     @ok
 ; CoCo 3 physical load through the MMU window
 @phys   pshs    u
-        ifdef   DMPKG_MMU_HOME
-        lda     #DMPKG_MMU_HOME
-        else
-        lda     DMPKG_MMUREG
-        endc
-        sta     dmpkg_msave
+        lda     DMPKG_MMUREG            ; window block before the load, put
+        sta     dmpkg_msave             ; back after it
         ldd     dmpkg_desc.dest,x       ; block = dest >> 13: A:B = bits 23-8,
         lslb                            ; shifted left 3 leaves bits 20-13 in A
         rola
