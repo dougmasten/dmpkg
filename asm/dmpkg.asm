@@ -20,9 +20,7 @@
 ; 3. This notice may not be removed or altered from any source distribution.
 ;
 ;------------------------------------------------------------------------------
-
-
-;------------------------------------------------------------------------------
+;
 ; 6809 source (runs on HD6309 in either mode), lwasm syntax.
 ; Pair with the files dmpkg generates:  equates (EQUs) and table
 ; (mount name, build_id, 12-byte asset descriptors).
@@ -88,7 +86,7 @@
 ;   DMPKG_DELAY    12     settle loop before polling READY (8 cyc/pass: ~54us at
 ;                         1.79MHz; the SDC needs ~20us to update READY; 1-65535)
 ;   DMPKG_TIMEOUT  16     poll timeout, units of 65536 polls (1-255)
-;   DMPKG_MINVER   $0117  lowest firmware dmpkg_init accepts (117 added STREAM)
+;   DMPKG_MINVER   $0117  lowest firmware dmpkg_init accepts (1.17 added STREAM)
 ;
 ; State: 17 bytes in dmpkg_vars.asm, placed after the code. To put them
 ; elsewhere (e.g. the direct page), include dmpkg_vars.asm before this file.
