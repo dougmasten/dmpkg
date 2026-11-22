@@ -624,8 +624,8 @@ dmpkg_getbyte
         clr     dmpkg_poll
 @ready  ldx     dmpkg_off
         tfr     x,d
-        bitb    #1
-        bne     @odd
+        lsrb                            ; offset bit 0 into carry
+        bcs     @odd
         lda     SDC_DATA                ; even offset: first byte of the pair
         bra     @adv
 @odd    lda     SDC_DATA+1              ; odd offset: second byte
