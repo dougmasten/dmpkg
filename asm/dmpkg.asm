@@ -517,6 +517,7 @@ dmpkg_start
 ; Calls       : dmpkg_settle, dmpkg_waitidle
 ; Description : Enters command mode. A stream still running (BUSY set) is
 ;             : aborted ($D0) by its BUSY bit, and dmpkg_live cleared.
+;             : Falls through into dmpkg_waitidle, which must follow it.
 ;------------------------------------------------------------------------------
 dmpkg_cmdmode
         clr     dmpkg_live
@@ -525,26 +526,10 @@ dmpkg_cmdmode
         bsr     dmpkg_settle
         lda     SDC_STAT
         bita    #SDC_BUSY               ; a stream (or command) still running?
-        beq     @idle
+        beq     dmpkg_waitidle
         lda     #SDC_C_ABORT
         sta     SDC_STAT
-@idle   bra     dmpkg_waitidle
-
-;------------------------------------------------------------------------------
-; Function    : dmpkg_settle
-; Entry       : none
-; Exit        : none
-; Destroys    : CC
-; Calls       : none
-; Description : Delay loop of DMPKG_DELAY passes, so the SDC has ~20us after a
-;             : command before its registers are read.
-;------------------------------------------------------------------------------
-dmpkg_settle
-        pshs    x
-        ldx     #DMPKG_DELAY
-@loop   leax    -1,x
-        bne     @loop
-        puls    x,pc
+;       bra     dmpkg_waitidle          ; falls through: dmpkg_waitidle is next
 
 ;------------------------------------------------------------------------------
 ; Function    : dmpkg_waitidle
@@ -573,6 +558,22 @@ dmpkg_waitidle
         orcc    #1                      ; set carry (error)
         puls    x,pc
 @ok     andcc   #$fe                    ; clear carry (success)
+        puls    x,pc
+
+;------------------------------------------------------------------------------
+; Function    : dmpkg_settle
+; Entry       : none
+; Exit        : none
+; Destroys    : CC
+; Calls       : none
+; Description : Delay loop of DMPKG_DELAY passes, so the SDC has ~20us after a
+;             : command before its registers are read.
+;------------------------------------------------------------------------------
+dmpkg_settle
+        pshs    x
+        ldx     #DMPKG_DELAY
+@loop   leax    -1,x
+        bne     @loop
         puls    x,pc
 
 ;------------------------------------------------------------------------------
