@@ -230,6 +230,20 @@ def run_all(ex, src):
         "PALETTE reloaded out of order (seek + skip 255 bytes)")
     chk(m.sdc.stream is None and not m.sdc.cmdmode, "closed, back in emulation mode")
 
+    # ---- run 1b: the same load with the state in the direct page
+    # (dmpkg_vars.asm included at $00E0 first; DP is 0 in the test machine)
+    dprog, ddone = assemble(ex, build, "DMPKG_BuildID",
+                            src='        setdp   $00\n        org     $00E0\n'
+                                '        include "dmpkg_vars.asm"\n' + TEST_ASM)
+    m = Machine(files_on_card, mounted="DEMO.DSK")
+    m.run(dprog, 0x1000, ddone)
+    chk(m.peek(0x100, 1) == b"\0", f"state in the direct page: no error (A=${m.peek(0x100,1)[0]:02X})")
+    check_assets(m, src, A, chk, "  ")
+    chk(m.peek(0x6400, 16) == src["palette.bin"] and m.peek(0x102, 2) == b"\x30\x00",
+        "  PALETTE reloaded out of order, decb exec in U")
+    chk(len(prog) - len(dprog) >= 17 + 60,
+        f"  {len(prog) - len(dprog)} bytes smaller: 17 of state, the rest direct addressing")
+
     # ---- run 2: stale-image build_id check
     bprog, bdone = assemble(ex, build, "badid")
     m = Machine(files_on_card, mounted="DEMO.DSK")

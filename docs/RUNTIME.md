@@ -68,4 +68,20 @@ Every call returns carry clear on success. On failure it returns carry set and t
 
 Configure these before the include: `DMPKG_DRIVE` (0), `DMPKG_WINDOW` ($4000), `DMPKG_MMUREG` (from `DMPKG_WINDOW`), `DMPKG_MMU_HOME`, `DMPKG_DELAY` (12), `DMPKG_TIMEOUT` (16), `DMPKG_MINVER` ($0117). The runtime is plain 6809 and assembles unchanged with `--6309`.
 
+### State in the direct page
+
+The runtime keeps 17 bytes of state, all `rmb`, in `asm/dmpkg_vars.asm`. `dmpkg.asm` includes that file, so by default the state sits right after the code. To put it somewhere else, include the file yourself before `dmpkg.asm`. The direct page is the obvious place:
+
+```
+        setdp   $00             ; the page DP holds whenever dmpkg runs
+        org     $00E0
+        include "dmpkg_vars.asm"
+        ...
+        include "dmpkg.asm"     ; its own include of dmpkg_vars.asm adds nothing
+```
+
+The file defines `DMPKG_VARS` the first time it's included and adds nothing after that, so the state is defined once, wherever the first include is. Don't define `DMPKG_VARS` yourself, or there's no state at all.
+
+lwasm then uses direct addressing for all 67 state accesses in the runtime. Each is a byte shorter and a cycle faster, so the code is 67 bytes smaller and the program saves the 17 bytes of state as well. DP must hold the `setdp` page whenever a dmpkg routine runs. The state needs no starting values, because `dmpkg_init` sets up the ones that matter, so the file can go in memory that isn't loaded.
+
 On a disk image, mask interrupts before `dmpkg_init`; see [DISK.md](DISK.md#interrupts).

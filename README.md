@@ -40,7 +40,7 @@ python/         the packer, a Python project of its own
                 outputs.py   equates, table and map text
                 cli.py       the dmpkg command (build, list, verify)
   tests/        the tests: harness.py (SDC model, 6809 machine), test_*.py, run_test.py runs them all
-asm/            the 6809 runtime (dmpkg.asm)
+asm/            the 6809 runtime (dmpkg.asm) and its state (dmpkg_vars.asm)
 example/        example project: manifest, asset generator, loader, Makefile
 hwtest/         tests for a real CoCo SDC, a folder and Makefile each: main/, stress/
 repacks/        games rebuilt as one dmpkg disk each (scripts and loader only; the games aren't included)
