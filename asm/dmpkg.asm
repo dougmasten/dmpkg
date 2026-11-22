@@ -376,7 +376,7 @@ dmpkg_fail
 ;------------------------------------------------------------------------------
 dmpkg_load
         pshs    b,x,y
-        tst     dmpkg_live              ; is the stream already parked here?
+        ldb     dmpkg_live              ; is the stream already parked here?
         beq     @seek
         ldd     dmpkg_desc.blk,x
         cmpd    dmpkg_blk
@@ -617,7 +617,7 @@ dmpkg_wok
 ;------------------------------------------------------------------------------
 dmpkg_getbyte
         pshs    b,x
-        tst     dmpkg_poll
+        lda     dmpkg_poll
         beq     @ready
         bsr     dmpkg_waitready
         bcs     @exit
