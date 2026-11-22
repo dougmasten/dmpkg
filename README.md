@@ -28,26 +28,6 @@ A loader calls `dmpkg_init` once, then `dmpkg_open` and `dmpkg_load` for each as
 
 Requires Python 3.8+ and PyYAML (installed by `pip install -e python`).
 
-```
-python/         the packer, a Python project of its own
-  pyproject.toml
-  src/dmpkg/    pack.py      build(): manifest -> layout -> image -> disk -> outputs
-                manifest.py  reading and checking project.yaml
-                layout.py    first-fit placement and image size
-                image.py     header, TOC, descriptors, build_id, reading images
-                decb.py      LOADM files, 8.3 names, the DECB disk
-                basic.py     BASIC tokenizer and lister (the CoCo 3 ROM's rules)
-                outputs.py   equates, table and map text
-                cli.py       the dmpkg command (build, list, verify)
-  tests/        the tests: harness.py (SDC model, 6809 machine), test_*.py, run_test.py runs them all
-asm/            the 6809 runtime (dmpkg.asm) and its state (dmpkg_vars.asm)
-example/        example project: manifest, asset generator, loader, Makefile
-hwtest/         tests for a real CoCo SDC, a folder and Makefile each: main/, stress/
-repacks/        games rebuilt as one dmpkg disk each (scripts and loader only; the games aren't included)
-docs/           the documentation (below)
-Makefile        runs the tests across both parts (the example included)
-```
-
 ## Documentation
 
 | file | what's in it |
