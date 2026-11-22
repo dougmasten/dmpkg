@@ -250,6 +250,12 @@ def run_all(ex, src):
     m.run(bprog, 0x1000, bdone)
     chk(m.peek(0x100, 1)[0] == EHDR, "wrong build_id -> DMPKG_EHDR")
 
+    # ---- run 2b: the image ends inside TITLE (blocks 10+): the stream runs
+    # out, the status drops to $00 (no BUSY, no error bit) -> end of file
+    m = Machine({"DEMO.DSK": img[:11 * 512]}, mounted="DEMO.DSK")
+    m.run(prog, 0x1000, done)
+    chk(m.peek(0x100, 1)[0] == EEOF, f"image ends mid-asset -> DMPKG_EEOF (A=${m.peek(0x100, 1)[0]:02X})")
+
     # ---- run 2d: dmpkg_open again while a stream is still running (FONT
     # loaded, stream parked part way into a block): the state is rmb and
     # dmpkg_init clears it, so the running stream is found by BUSY and aborted
