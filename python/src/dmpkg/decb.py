@@ -202,3 +202,44 @@ def read_disk(img: bytes):
             g = fat[g]
         files.append((name + ("." + ext if ext else ""), grans))
     return files
+
+
+def read_files(img: bytes, src: str = "disk") -> list[dict]:
+    """Every file on a DECB disk image, in directory order, as
+    dict(name, type, ascii, data, grans, last): type is the directory's file
+    type (0 BASIC, 1 data, 2 machine language, 3 text), ascii its ASCII flag,
+    grans the granule chain and last the bytes used in the last sector.
+    Raises PackError on a disk that's too small or a broken granule chain."""
+    if len(img) < DISK_BYTES:
+        raise PackError(f"{src}: {len(img)} bytes, under a 35-track disk ({DISK_BYTES})")
+    fat = img[DIR_LO + SECTOR:DIR_LO + SECTOR + GRANULES]
+    out = []
+    for d in range(DIR_LO + 2 * SECTOR, DIR_LO + 11 * SECTOR, 32):
+        e = img[d:d + 32]
+        if e[0] == 0xFF:
+            break                                   # never used: end of directory
+        if e[0] == 0x00:
+            continue                                # killed
+        name = e[0:8].decode("ascii", "replace").rstrip()
+        ext = e[8:11].decode("ascii", "replace").rstrip()
+        full = name + ("." + ext if ext else "")
+        last = e[14] << 8 | e[15]                   # bytes used in the last sector
+        data, g, seen, seen_order = bytearray(), e[13], set(), []
+        while True:
+            if g >= GRANULES or g in seen:
+                raise PackError(f"{src}: {full}: broken granule chain")
+            seen.add(g)
+            seen_order.append(g)
+            nxt, at = fat[g], gran_offset(g)
+            if nxt >= 0xC0:                         # last granule: low bits = sectors used
+                n = nxt & 0x1F
+                if not 1 <= n <= 9 or last > SECTOR:
+                    raise PackError(f"{src}: {full}: bad last granule (FAT ${nxt:02X}, "
+                                    f"{last} bytes in its last sector)")
+                data += img[at:at + (n - 1) * SECTOR + last]
+                break
+            data += img[at:at + GRAN_BYTES]
+            g = nxt
+        out.append(dict(name=full, type=e[11], ascii=e[12] == 0xFF, data=bytes(data),
+                        grans=[*seen_order], last=last))
+    return out
