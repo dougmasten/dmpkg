@@ -182,12 +182,22 @@ def run_all(ex, src):
         and any("AUTOEXEC.BAS" in r for r in row.values()) and len(row) == 35,
         "dmpkg list --map: 35 tracks, granule owners, assets by name, track 17")
     flat = bytearray(img)
-    flat[13] &= ~image.H_DISK & 0xFF                 # header flags: not a disk
+    flat[14] &= ~image.H_DISK & 0xFF                 # header flags: not a disk
     sds = os.path.join(build, "FLAT.SDS")
     with open(sds, "wb") as f:
         f.write(flat)
     with contextlib.redirect_stderr(io.StringIO()):
         chk(cli_main(["list", "--map", sds]) == 1, "dmpkg list --map on a stream image: error")
+    other = bytearray(img)
+    other[8] = image.FORMAT + 1                      # header format this dmpkg doesn't read
+    fmtx = os.path.join(build, "FMTX.DSK")
+    with open(fmtx, "wb") as f:
+        f.write(other)
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        rc = cli_main(["verify", fmtx])
+    chk(img[8] == image.FORMAT and rc == 1 and f"format {image.FORMAT + 1}" in err.getvalue(),
+        f"header byte 8 is format {image.FORMAT}; another format is rejected")
 
     # the loader, read off the disk and run as LOADM would: no mount, every
     # asset streamed from the image it came from
@@ -292,7 +302,7 @@ def run_all(ex, src):
     chk([(a.block, a.off) for a in sres["assets"]] == [(a.block, a.off) for a in res["assets"]]
         and sres["build_id"] == res["build_id"],
         "stream image: same layout and build_id as the disk")
-    chk(len(simg) == image.MIN_IMAGE and simg[13] == 0, "stream image: 162 blocks, no disk flag")
+    chk(len(simg) == image.MIN_IMAGE and simg[14] == 0, "stream image: 162 blocks, no disk flag")
     prog, done = assemble(ex, build, "DMPKG_BuildID")
     m = Machine({"GAMES/DEMO.SDS": simg})
     m.run(prog, 0x1000, done)

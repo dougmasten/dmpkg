@@ -36,7 +36,7 @@ def cmd_list(path, show_map=False, names_from=None):
         print()
         print("\n".join(disk_map(img, h, ents, names)))
         return
-    print(f"{h['title']}  build ${h['build_id']:08X}  "
+    print(f"{h['title']}  format {h['format']}  build ${h['build_id']:08X}  "
           f"{h['blocks']} blocks  TOC {toc_size(h['count'])[1]}"
           + ("  DECB disk" if h["flags"] & H_DISK else ""))
     if h["flags"] & H_DISK:

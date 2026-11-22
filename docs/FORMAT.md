@@ -34,13 +34,16 @@ block T ..          asset data, placed first-fit in manifest order
 |---|---|---|---|
 | 0 | 4 | magic | ASCII `DMPK` (`$44 $4D $50 $4B`) |
 | 4 | 4 | build_id | CRC-32, see below |
-| 8 | 2 | count | number of assets / TOC entries |
-| 10 | 3 | blocks | total image size in blocks |
-| 13 | 1 | flags | `$01` disk image (also a DECB disk), else `$00`; other bits reserved |
-| 14 | 2 | reserved | `$00 $00` |
+| 8 | 1 | format | `$01`; see below |
+| 9 | 2 | count | number of assets / TOC entries |
+| 11 | 3 | blocks | total image size in blocks |
+| 14 | 1 | flags | `$01` disk image (also a DECB disk), else `$00`; other bits reserved |
+| 15 | 1 | reserved | `$00` |
 | 16 | 16 | title | `project.title`, ASCII, space-padded, not terminated |
 
-`dmpkg_open` checks the magic (bytes 0–3) against `DMPKG_MAGIC` from the generated `assets.inc`, and `build_id` (bytes 4–7) against `DMPKG_BuildID` from the generated `assettab.asm`, so a file that isn't a dmpkg image, or a program built against a different image, fails with error 4. Both checks are skipped when `dmpkg_open` is given Y = 0. The other header fields aren't checked: the TOC, and through its CRCs the data, are already covered by `build_id`.
+`dmpkg_open` checks the magic (bytes 0–3) against `DMPKG_MAGIC` from the generated `assets.inc`, and `build_id` (bytes 4–7) against `DMPKG_BuildID` from the generated `assettab.asm`, so a file that isn't a dmpkg image, or a program built against a different image, fails with error 4. Both checks are skipped when `dmpkg_open` is given Y = 0. The runtime reads only bytes 0–7. The other header fields aren't checked: the TOC, and through its CRCs the data, are already covered by `build_id`.
+
+`format` is the layout version of the header and TOC, for the tools. `dmpkg list` and `dmpkg verify` read only the format they were written for and reject any other with a clear error, instead of misreading the fields. It goes up by one on any change to the header or TOC layout. The runtime doesn't check it: a loader and its image are always built by the same dmpkg.
 
 ## TOC entry (16 bytes)
 
@@ -116,7 +119,7 @@ The other 34 tracks are 68 granules of 9 sectors (2,304 bytes), two per track, n
 ## Worked example (`example/build/DEMO.DSK`)
 
 ```
-00000000: 44 4d 50 4b 6a 82 1b d0 00 06 00 01 3b 01 00 00  DMPKj.......;...
+00000000: 44 4d 50 4b 6a 82 1b d0 01 00 06 00 01 3b 01 00  DMPKj........;..
 00000010: 44 65 6d 6f 20 20 20 20 20 20 20 20 20 20 20 20  Demo
 00000020: 00 00 01 00 00 00 02 ff 00 00 60 00 1d a2 53 d6  FONT    blk 1 off 0 len 767 cpu $6000
 00000030: 00 00 02 00 ff 00 00 10 00 00 64 00 73 1d bb 74  PALETTE blk 2 off 255 (packed after FONT)
@@ -124,4 +127,4 @@ The other 34 tracks are 68 granules of 9 sectors (2,304 bytes), two per track, n
 00000070: 00 00 09 00 6b 00 01 86 40 00 00 00 c6 fb 89 72  CODE    blk 9 off 107 (in TITLE's align gap), flags $40 decb
 ```
 
-Disk image (flags `$01`), 6 assets, build `$6A821BD0`, 315 blocks (`$13B`, 35 tracks), 1 TOC block. The assets fill granules 0–10 (`DMPKG.DAT`), `LOADER.BIN` is granule 11 and `AUTOEXEC.BAS` granule 12.
+Format 1, disk image (flags `$01`), 6 assets, build `$6A821BD0`, 315 blocks (`$13B`, 35 tracks), 1 TOC block. The assets fill granules 0–10 (`DMPKG.DAT`), `LOADER.BIN` is granule 11 and `AUTOEXEC.BAS` granule 12.

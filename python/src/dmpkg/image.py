@@ -16,6 +16,7 @@ MIN_IMAGE = 0x14400          # smallest DSK that M: mounts, per the SDC User Gui
                              # (324 sectors = 82,944 bytes = 162 blocks)
 MAX_BLOCKS = 1 << 24         # 24-bit block number
 MAGIC = b"DMPK"
+FORMAT = 1                   # header byte 8: bump on any change to the header or TOC layout
 HDR_SIZE = 32
 TOC_ENTRY = 16
 
@@ -79,9 +80,9 @@ def build_id(toc_entries: bytes) -> int:
 
 
 def header(title: str, count: int, build_id: int, blocks: int, disk: bool) -> bytes:
-    hdr = (MAGIC + struct.pack(">I", build_id)
+    hdr = (MAGIC + struct.pack(">I", build_id) + bytes([FORMAT])
            + struct.pack(">H", count) + blocks.to_bytes(3, "big")
-           + bytes([H_DISK if disk else 0]) + bytes(2)                      # bytes 14-15 reserved
+           + bytes([H_DISK if disk else 0, 0])                              # byte 15 reserved
            + title.encode("ascii", "replace")[:16].ljust(16, b" "))
     assert len(hdr) == HDR_SIZE
     return hdr
@@ -93,9 +94,11 @@ def read_image(path: str):
         img = f.read()
     if len(img) < HDR_SIZE or img[:4] != MAGIC:
         raise PackError(f"{path}: not a dmpkg image")
-    bid, count = struct.unpack_from(">IH", img, 4)
-    flags = img[13]
-    blocks = int.from_bytes(img[10:13], "big")
+    bid, fmt, count = struct.unpack_from(">IBH", img, 4)
+    if fmt != FORMAT:
+        raise PackError(f"{path}: dmpkg format {fmt}, but this dmpkg reads format {FORMAT}")
+    blocks = int.from_bytes(img[11:14], "big")
+    flags = img[14]
     title = img[16:32].decode("ascii", "replace").rstrip()
     ents = []
     for i in range(count):
@@ -103,5 +106,5 @@ def read_image(path: str):
         ents.append(dict(block=int.from_bytes(e[0:3], "big"), off=int.from_bytes(e[3:5], "big"),
                          length=int.from_bytes(e[5:8], "big"), flags=e[8],
                          dest=int.from_bytes(e[9:12], "big"), crc=struct.unpack(">I", e[12:16])[0]))
-    return img, dict(flags=flags, count=count, build_id=bid, blocks=blocks,
+    return img, dict(format=fmt, flags=flags, count=count, build_id=bid, blocks=blocks,
                      title=title), ents
