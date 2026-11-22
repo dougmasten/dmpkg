@@ -3,7 +3,7 @@
 The runtime end to end, on the example project with random assets: the
 example as a single-file DECB disk (its loader assembled, put on the disk,
 read back through the DECB directory and run), the same manifest as a bare
-stream image mounted by name, a stale build_id, wrong magic, a second open
+stream image mounted by name, a stale build_id, a second open
 while a stream runs, a card that stalls, no SDC, and the firmware gate.
 
   test_runtime.py        (TEST_SEED=n repeats a run with the seed it printed)
@@ -246,11 +246,6 @@ def run_all(ex, src):
           ("abort",) in m.sdc.log, m.sdc.streams_started)
     chk(rr == (0, True, True, 4),                    # open, FONT, open, FONT
         f"dmpkg_open while a stream runs: aborted by BUSY, reopened, FONT loads again {rr}")
-
-    # ---- run 2b: right build_id, wrong magic: not a dmpkg image
-    m = Machine({"DEMO.DSK": b"XMPK" + img[4:]}, mounted="DEMO.DSK")
-    m.run(prog, 0x1000, done)
-    chk(m.peek(0x100, 1)[0] == EHDR, "wrong magic -> DMPKG_EHDR")
 
     # ---- run 3: card hangs part way through TITLE (phys load): READY never
     # comes, so dmpkg_waitready times out. DMPKG_TIMEOUT=1 (65536 polls) keeps

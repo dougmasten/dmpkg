@@ -23,7 +23,6 @@ start
         jsr     dmpkg_close
         bra     done
 
-DMPKG_MAGIC equ $444D504B       no assets.inc here
         include "dmpkg.asm"
 """
 

@@ -25,8 +25,7 @@
 ;------------------------------------------------------------------------------
 ; 6809 source (runs on HD6309 in either mode), lwasm syntax.
 ; Pair with the files dmpkg generates:  equates (EQUs) and table
-; (mount name, build_id, 12-byte asset descriptors). The runtime uses
-; DMPKG_MAGIC from the equates file.
+; (mount name, build_id, 12-byte asset descriptors).
 ;
 ; Entry points
 ;   dmpkg_init   Checks a CoCo SDC is present (DMPKG_ENODEV if not), enters
@@ -42,8 +41,8 @@
 ;                    the check
 ;                Enters command mode (ending any running stream), mounts the
 ;                image, starts a stream at block 0 and checks the header's
-;                magic (DMPKG_MAGIC) and build_id so a stale or wrong image is
-;                caught. Needs dmpkg_init first.
+;                build_id so a stale or wrong image is caught. Needs
+;                dmpkg_init first.
 ;   dmpkg_stop   ends a running stream ($D0), stays in command mode
 ;   dmpkg_close  dmpkg_stop, then puts the controller back in floppy
 ;                emulation mode (write 0 to $FF40)
@@ -59,8 +58,8 @@
 ;   DMPKG_ENODEV  1  no CoCo SDC found
 ;   DMPKG_EVER    2  firmware too old for STREAM (dmpkg_ver holds its version)
 ;   DMPKG_EMOUNT  3  mount failed (status bit 7 after $E0)
-;   DMPKG_EHDR    4  magic or build_id in block 0 doesn't match (stale or
-;                    wrong image)
+;   DMPKG_EHDR    4  build_id in block 0 doesn't match (stale or wrong
+;                    image)
 ;   DMPKG_EEOF    5  stream ended (BUSY dropped) before the data was read
 ;   DMPKG_ETIME   6  controller didn't answer in time
 ;   DMPKG_EFAIL   7  controller reported an error (FAILED, or the stream ended
@@ -172,7 +171,7 @@ SDC_ERROR       equ     %00001000       ; set when a stream ends on an error
 DMPKG_ENODEV    equ     1               ; no CoCo SDC found
 DMPKG_EVER      equ     2               ; firmware older than DMPKG_MINVER
 DMPKG_EMOUNT    equ     3               ; mount failed (file not found?)
-DMPKG_EHDR      equ     4               ; magic or build_id mismatch
+DMPKG_EHDR      equ     4               ; build_id mismatch
 DMPKG_EEOF      equ     5               ; stream ended before the data
 DMPKG_ETIME     equ     6               ; controller didn't answer in time
 DMPKG_EFAIL     equ     7               ; controller reported an error
@@ -312,12 +311,8 @@ dmpkg_open
         bcs     @error
         ldy     3,s                     ; expected build_id pointer (saved Y)
         beq     @ok
-        ldd     SDC_DATA                ; bytes 0-3: magic
-        cmpd    #DMPKG_MAGIC/$10000
-        bne     @ehdr                   ; not a dmpkg image
-        ldd     SDC_DATA
-        cmpd    #DMPKG_MAGIC&$FFFF
-        bne     @ehdr                   ; not a dmpkg image
+        ldd     SDC_DATA                ; drop bytes 0-3 (magic: the
+        ldd     SDC_DATA                ;  build_id check covers it)
         ldd     SDC_DATA                ; bytes 4-7: build_id
         cmpd    ,y
         bne     @ehdr                   ; fail build_id check

@@ -41,7 +41,7 @@ block T ..          asset data, placed first-fit in manifest order
 | 15 | 1 | reserved | `$00` |
 | 16 | 16 | title | `project.title`, ASCII, space-padded, not terminated |
 
-`dmpkg_open` checks the magic (bytes 0–3) against `DMPKG_MAGIC` from the generated `assets.inc`, and `build_id` (bytes 4–7) against `DMPKG_BuildID` from the generated `assettab.asm`, so a file that isn't a dmpkg image, or a program built against a different image, fails with error 4. Both checks are skipped when `dmpkg_open` is given Y = 0. The runtime reads only bytes 0–7. The other header fields aren't checked: the TOC, and through its CRCs the data, are already covered by `build_id`.
+`dmpkg_open` checks `build_id` (bytes 4–7) against `DMPKG_BuildID` from the generated `assettab.asm`, so a file that isn't a dmpkg image, or a program built against a different image, fails with error 4. The check is skipped when `dmpkg_open` is given Y = 0. The runtime reads only bytes 0–7 and skips the magic: a 32-bit `build_id` already rejects a wrong file, and the tools check the magic. The other header fields aren't checked: the TOC, and through its CRCs the data, are already covered by `build_id`.
 
 `format` is the layout version of the header and TOC, for the tools. `dmpkg list` and `dmpkg verify` read only the format they were written for and reject any other with a clear error, instead of misreading the fields. It goes up by one on any change to the header or TOC layout. The runtime doesn't check it: a loader and its image are always built by the same dmpkg.
 
