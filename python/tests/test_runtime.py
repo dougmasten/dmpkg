@@ -199,6 +199,33 @@ def run_all(ex, src):
     chk(img[8] == image.FORMAT and rc == 1 and f"format {image.FORMAT + 1}" in err.getvalue(),
         f"header byte 8 is format {image.FORMAT}; another format is rejected")
 
+    # dmpkg extract: every asset back out by name (the map report next to the
+    # image gives the names), raw ones as stored, CODE as its LOADM file again
+    sources = {"font": "font.bin", "palette": "palette.bin", "level1": "level1.bin",
+               "map": "map.bin", "title": "title.gfx", "code": "code.bin"}
+    got = {}
+    with contextlib.redirect_stdout(io.StringIO()):
+        for name, fn in sources.items():
+            out = os.path.join(build, f"X_{name}.bin")
+            rc = cli_main(["extract", res["image"], name.upper(), "-o", out])
+            got[name] = rc == 0 and read(out) == src[fn]
+        rc = cli_main(["extract", res["image"], "#4", "-o", os.path.join(build, "X_4.bin")])
+    chk(all(got.values()) and rc == 0 and read(os.path.join(build, "X_4.bin")) == src["title.gfx"],
+        f"dmpkg extract: every asset by name equals its source file, #4 by index {got}")
+    bad = bytearray(img)
+    bad[1 * 512 + 100] ^= 0xFF                       # a byte inside FONT
+    badp = os.path.join(build, "BADX.DSK")
+    with open(badp, "wb") as f:
+        f.write(bad)
+    out = os.path.join(build, "X_bad.bin")
+    if os.path.exists(out):
+        os.remove(out)
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        rc = cli_main(["extract", badp, "0", "-o", out])
+    chk(rc == 1 and "CRC mismatch" in err.getvalue() and not os.path.exists(out),
+        "dmpkg extract: a corrupted asset is refused and nothing is written")
+
     # the loader, read off the disk and run as LOADM would: no mount, every
     # asset streamed from the image it came from
     segs, exe = decb.parse_loadm(files["LOADER.BIN"][2], "LOADER.BIN")

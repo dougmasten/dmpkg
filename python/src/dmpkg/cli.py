@@ -5,6 +5,7 @@ Usage:
   dmpkg build project.yaml [-v]
   dmpkg list  IMAGE [--map [--names REPORT]]
   dmpkg verify IMAGE
+  dmpkg extract IMAGE NAME [-o OUT] [--names REPORT]
   dmpkg tokenize PROGRAM.TXT OUT.BAS [--base ADDR] [--uppercase]
   dmpkg detokenize PROGRAM.BAS [OUT.TXT]
 
@@ -13,12 +14,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import zlib
 
 from . import __version__
 from .decb import (DIR_HI, DIR_LO, DIR_TRACK, DISK_BYTES, GRAN_BYTES, GRANULES, HD_MIN,
-                   SS_MAX, TRACK_BYTES, gran_of, read_disk)
+                   SS_MAX, TRACK_BYTES, gran_of, loadm, read_disk)
 from .errors import PackError
 from .image import (BLOCK, F_DECB, F_PHYS, H_DISK, HDR_SIZE, MIN_IMAGE, TOC_ENTRY,
                     read_image, toc_size)
@@ -93,6 +95,45 @@ def disk_map(img: bytes, h: dict, ents: list, names: list[str]) -> list[str]:
         out.append(f"past track 34 (Disk BASIC never looks): {', '.join(past)}")
     out.append(f"data ends at byte {used}; the file is {len(img)} bytes")
     return out
+
+
+def cmd_extract(path, which, out=None, names_from=None):
+    """Write one asset back out, after checking it against its CRC. Raw
+    assets come out as stored; decb assets as a LOADM file again."""
+    img, h, ents = read_image(path)
+    if names_from is None:
+        guess = os.path.splitext(path)[0] + ".map"   # the build's map report, if next to it
+        names_from = guess if os.path.exists(guess) else None
+    names = report_names(names_from) if names_from else []
+    key = which[1:] if which.startswith("#") else which
+    if key.isdigit():
+        i = int(key)
+        if i >= len(ents):
+            raise PackError(f"{path}: no asset {i} (the image has {len(ents)})")
+    else:
+        hit = [n for n, name in enumerate(names) if name.upper() == which.upper()]
+        if not hit:
+            where = (f"in {names_from}" if names_from else
+                     "(no map report: give --names REPORT, or the asset's index)")
+            raise PackError(f"{path}: no asset named {which} {where}")
+        i = hit[0]
+    e = ents[i]
+    label = names[i] if i < len(names) else f"#{i}"
+    p = e["block"] * BLOCK + e["off"]
+    data = img[p:p + e["length"]]
+    if len(data) != e["length"] or zlib.crc32(data) != e["crc"]:
+        raise PackError(f"{path}: asset {label}: CRC mismatch, not written")
+    decb = bool(e["flags"] & F_DECB)
+    if decb:
+        data = loadm(data, f"{path}: asset {label}")
+    if out is None:
+        out = (names[i] if i < len(names) else f"asset{i}") + ".bin"
+    if out == "-":
+        sys.stdout.buffer.write(data)
+    else:
+        with open(out, "wb") as f:
+            f.write(data)
+        print(f"{label}: {len(data)} bytes{' (LOADM file)' if decb else ''} -> {out}")
 
 
 def cmd_verify(path) -> bool:
@@ -175,6 +216,13 @@ def main(argv=None):
                     help="label assets with the names in a build's map report "
                          "(default: #index)")
     sub.add_parser("verify", help="check an image's CRCs").add_argument("image")
+    x = sub.add_parser("extract", help="write one asset back out, checked against its CRC")
+    x.add_argument("image")
+    x.add_argument("name", help="asset name (from the map report) or index (3 or #3)")
+    x.add_argument("-o", "--output", help="file to write, - for stdout (default: NAME.bin)")
+    x.add_argument("--names", metavar="REPORT",
+                   help="the build's map report, for asset names "
+                        "(default: IMAGE with .map, if it exists)")
     t = sub.add_parser("tokenize", help="ASCII BASIC program -> tokenized .BAS file")
     t.add_argument("source")
     t.add_argument("output")
@@ -191,6 +239,8 @@ def main(argv=None):
             build(args.manifest, args.verbose, loader=not args.no_loader)
         elif args.cmd == "list":
             cmd_list(args.image, args.map, args.names)
+        elif args.cmd == "extract":
+            cmd_extract(args.image, args.name, args.output, args.names)
         elif args.cmd == "tokenize":
             with open(args.source, encoding="latin-1") as f:
                 text = f.read()

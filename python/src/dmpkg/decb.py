@@ -69,6 +69,23 @@ def records(segs, exe) -> bytes:
     return bytes(out)
 
 
+def loadm(stored: bytes, src: str) -> bytes:
+    """The stored records back as a LOADM file: a $00 preamble per segment,
+    then the $FF postamble with the exec address."""
+    out, i = bytearray(), 0
+    while True:
+        if i + 4 > len(stored):
+            raise PackError(f"{src}: DECB records end without an exec record")
+        ln, addr = struct.unpack_from(">HH", stored, i)
+        if ln == 0:
+            return bytes(out + b"\xff\x00\x00" + struct.pack(">H", addr))
+        data = stored[i + 4:i + 4 + ln]
+        if len(data) != ln:
+            raise PackError(f"{src}: truncated DECB record at {i}")
+        out += b"\x00" + struct.pack(">HH", ln, addr) + data
+        i += 4 + ln
+
+
 def file_name(path: str, what: str) -> tuple[str, str]:
     """'build/loader.bin' -> ('LOADER', 'BIN'), checked as a DECB 8.3 name."""
     leaf = os.path.basename(path).upper()
