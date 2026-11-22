@@ -396,14 +396,12 @@ dmpkg_load
         ldd     dmpkg_desc.off,x        ; skip to the asset's offset (0-511)
         beq     @here
         std     dmpkg_off               ; stream position once skipped
-        lsra                            ; D = whole pairs to drop
-        rorb
-        tfr     d,y
-        leay    ,y                      ; (TFR leaves the flags alone)
+        lsra                            ; B = whole pairs to drop (A = 0:
+        rorb                            ; offset < 512), Z if none
         beq     @skip_odd
 @skip_loop
-        ldd     SDC_DATA                ; drop a pair: $FF4A then $FF4B
-        leay    -1,y
+        ldy     SDC_DATA                ; drop a pair: $FF4A then $FF4B
+        decb
         bne     @skip_loop
 @skip_odd
         lda     dmpkg_desc.off+1,x
@@ -517,7 +515,9 @@ dmpkg_cmdmode
         clr     dmpkg_live
         lda     #SDC_CMDMODE
         sta     SDC_LATCH
+        pshs    x
         bsr     dmpkg_settle
+        puls    x
         lda     SDC_STAT
         bita    #SDC_BUSY               ; a stream (or command) still running?
         beq     dmpkg_waitidle
@@ -533,42 +533,38 @@ dmpkg_cmdmode
 ; Destroys    : A, CC
 ; Calls       : dmpkg_settle
 ; Description : Settles, then polls status until BUSY clears or the
-;             : DMPKG_TIMEOUT x 65536 poll limit runs out.
+;             : DMPKG_TIMEOUT x 65536 poll limit runs out. Leaves through
+;             : dmpkg_waitready's exits (dmpkg_wok, dmpkg_wtime).
 ;------------------------------------------------------------------------------
 dmpkg_waitidle
         pshs    x
-        bsr     dmpkg_settle
-        lda     #DMPKG_TIMEOUT
-        sta     dmpkg_tmo
-        ldx     #0
+        bsr     dmpkg_settle            ; X = 0, timeout set
 @loop   lda     SDC_STAT
         bita    #SDC_BUSY
-        beq     @ok
+        beq     dmpkg_wok
         leax    -1,x
         bne     @loop
         dec     dmpkg_tmo
         bne     @loop
-        lda     #DMPKG_ETIME            ; ERROR CODE: BUSY timeout
-        orcc    #1                      ; set carry (error)
-        puls    x,pc
-@ok     andcc   #$fe                    ; clear carry (success)
-        puls    x,pc
+        bra     dmpkg_wtime
 
 ;------------------------------------------------------------------------------
 ; Function    : dmpkg_settle
 ; Entry       : none
-; Exit        : none
-; Destroys    : CC
+; Exit        : X = 0 and dmpkg_tmo = DMPKG_TIMEOUT: the poll counters
+;             : dmpkg_waitidle and dmpkg_waitready start from
+; Destroys    : A, X, CC
 ; Calls       : none
 ; Description : Delay loop of DMPKG_DELAY passes, so the SDC has ~20us after a
 ;             : command before its registers are read.
 ;------------------------------------------------------------------------------
 dmpkg_settle
-        pshs    x
         ldx     #DMPKG_DELAY
 @loop   leax    -1,x
-        bne     @loop
-        puls    x,pc
+        bne     @loop                   ; X = 0 for the caller's poll count
+        lda     #DMPKG_TIMEOUT
+        sta     dmpkg_tmo
+        rts
 
 ;------------------------------------------------------------------------------
 ; Function    : dmpkg_waitready
@@ -584,20 +580,18 @@ dmpkg_settle
 ;------------------------------------------------------------------------------
 dmpkg_waitready
         pshs    x
-        bsr     dmpkg_settle
-        lda     #DMPKG_TIMEOUT
-        sta     dmpkg_tmo
-        ldx     #0
+        bsr     dmpkg_settle            ; X = 0, timeout set
 @loop   lda     SDC_STAT
         bmi     @fail
         bita    #SDC_READY
-        bne     @ok
+        bne     dmpkg_wok
         bita    #SDC_BUSY
         beq     @eof
         leax    -1,x
         bne     @loop
         dec     dmpkg_tmo
         bne     @loop
+dmpkg_wtime
         lda     #DMPKG_ETIME            ; ERROR CODE: READY timeout
         fcb     $8C                     ; skip 2 bytes
 @fail   lda     #DMPKG_EFAIL            ; ERROR CODE: SDC reported FAILED
@@ -607,7 +601,8 @@ dmpkg_waitready
         bne     @fail                   ; $08 (no FAILED bit), a clean one $00
         lda     #DMPKG_EEOF             ; ERROR CODE: end of file
         bra     @error
-@ok     andcc   #$fe                    ; clear carry (success)
+dmpkg_wok
+        andcc   #$fe                    ; clear carry (success)
         puls    x,pc
 
 ;------------------------------------------------------------------------------
@@ -669,18 +664,17 @@ dmpkg_getword
 ; Destroys    : CC
 ; Calls       : none
 ; Description : Steps dmpkg_blk to the next block and flags that READY must be
-;             : polled before its first byte is read.
+;             : polled before its first byte is read (dmpkg_poll nonzero:
+;             : it's always cleared before the next block, so INC is enough).
 ;------------------------------------------------------------------------------
 dmpkg_nextblk
-        pshs    a
+        inc     dmpkg_poll              ; nonzero: wait READY first
         inc     dmpkg_blk+2
         bne     @exit
         inc     dmpkg_blk+1
         bne     @exit
         inc     dmpkg_blk
-@exit   lda     #1
-        sta     dmpkg_poll
-        puls    a,pc
+@exit   rts
 
 ;------------------------------------------------------------------------------
 ; Function    : dmpkg_copy

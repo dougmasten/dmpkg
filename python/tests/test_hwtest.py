@@ -44,7 +44,7 @@ def hwtest_test():
             # timing: the model's tick counts give 6.4 ms a block and 1.4 ms a
             # restart; both move when the copy loop's speed changes
             tm = re.findall(r"(BLOCK|RESTART) MS +(\S+)", cells)
-            results.append(check("BLOCK MS   6.4" in cells and "RESTART MS 1.4" in cells
+            results.append(check("BLOCK MS   6.3" in cells and "RESTART MS 1.4" in cells
                                  and m.peek(0x010C, 3) == bytes(3) and not m.crb & 1,
                                  f"{what}: timing cells {tm}, IRQ hook and PIA put back"))
     bad = dict(card)
