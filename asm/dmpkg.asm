@@ -245,8 +245,6 @@ dmpkg_init
 @error  orcc    #1                      ; set carry (error)
 @exit   rts
 
-
-
 ;------------------------------------------------------------------------------
 ; Function    : dmpkg_open
 ; Entry       : Reg X = mount name ("M:..." zero-terminated, e.g. DMPKG_MountName),
@@ -519,8 +517,8 @@ dmpkg_cmdmode
         bsr     dmpkg_settle
         puls    x
         lda     SDC_STAT
-        bita    #SDC_BUSY               ; a stream (or command) still running?
-        beq     dmpkg_waitidle
+        lsra                            ; SDC_BUSY (bit 0) into carry: a stream
+        bcc     dmpkg_waitidle          ; (or command) still running?
         lda     #SDC_C_ABORT
         sta     SDC_STAT
 ;       bra     dmpkg_waitidle          ; falls through: dmpkg_waitidle is next
@@ -540,8 +538,8 @@ dmpkg_waitidle
         pshs    x
         bsr     dmpkg_settle            ; X = 0, timeout set
 @loop   lda     SDC_STAT
-        bita    #SDC_BUSY
-        beq     dmpkg_wok
+        lsra                            ; SDC_BUSY (bit 0) into carry
+        bcc     dmpkg_wok
         leax    -1,x
         bne     @loop
         dec     dmpkg_tmo
@@ -585,8 +583,8 @@ dmpkg_waitready
         bmi     @fail
         bita    #SDC_READY
         bne     dmpkg_wok
-        bita    #SDC_BUSY
-        beq     @eof
+        lsra                            ; SDC_BUSY (bit 0) into carry
+        bcc     @eof                    ; BUSY clear: the stream ended
         leax    -1,x
         bne     @loop
         dec     dmpkg_tmo
@@ -597,7 +595,7 @@ dmpkg_wtime
 @fail   lda     #DMPKG_EFAIL            ; ERROR CODE: SDC reported FAILED
 @error  orcc    #1                      ; set carry (error)
         puls    x,pc
-@eof    bita    #SDC_ERROR              ; firmware ends a failed stream with
+@eof    bita    #SDC_ERROR/2            ; firmware ends a failed stream with
         bne     @fail                   ; $08 (no FAILED bit), a clean one $00
         lda     #DMPKG_EEOF             ; ERROR CODE: end of file
         bra     @error
