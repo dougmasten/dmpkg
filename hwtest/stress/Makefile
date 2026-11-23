@@ -5,7 +5,7 @@
 #   make clean      remove build/ and assets/
 #   make help       list targets and variables
 #
-# mkstress.py writes the 64 pattern assets and their checksum table, then the
+# mkstress.py writes the 256 LFSR assets and their constants, then the
 # disk is built in two passes: the include files, STRESS.BIN assembled
 # against them, then the disk with it. Needs python3 and lwasm. DMPKG points
 # at the dmpkg repo (by default the one this folder is in).

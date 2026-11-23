@@ -95,32 +95,32 @@ def stress_test():
                 return 0x20 if polls[0] >= key_at else 0
             return rom.get(addr, 0)
         m.mem.add_read_byte_callback(rd, 0xA000, 0xA1FF)
-        m.call(segs, exe, max_ops=60_000_000)
+        m.call(segs, exe, max_ops=240_000_000)
         rows = {r.split("  ")[0].strip(): r for r in screen(m)}
         return m, screen(m), rows
 
     def num(rows, label):
         return int(rows[label][len(label):].split()[0])
 
-    # clean: 64 asset polls answer nothing, the poll after the pass stops it
-    m, text, rows = run(img, 65)
-    results.append(check(num(rows, "PASSES") == 1 and num(rows, "BAD SUM") == 0
+    # clean: 256 asset polls answer nothing, the poll after the pass stops it
+    m, text, rows = run(img, 257)
+    results.append(check(num(rows, "PASSES") == 1 and num(rows, "BAD DATA") == 0
                          and num(rows, "OPEN ERRORS") == 0 and num(rows, "LOAD ERRORS") == 0
                          and m.sdc.streams_started == 3 and not m.sdc.cmdmode,
-                         f"stress: a clean pass of 64 assets ({m.cpu.cycles} cycles): streams for "
+                         f"stress: a clean pass of 256 assets ({m.cpu.cycles} cycles): streams for "
                          "the header, the first asset and past track 17 only, closed"))
-    # one byte of s05 corrupted on the disk
+    # one byte of s200 corrupted on the disk (3 digits on the screen)
     _, _, ents = image.read_image(path)
     bad = bytearray(img)
-    pos = ents[5]["block"] * 512 + ents[5]["off"] + 0x123
+    pos = ents[200]["block"] * 512 + ents[200]["off"] + 0x123
     want = bad[pos]
     bad[pos] ^= 0x5A
-    m, text, rows = run(bytes(bad), 65)
+    m, text, rows = run(bytes(bad), 257)
     line = " ".join(text)
-    results.append(check(num(rows, "PASSES") == 1 and num(rows, "BAD SUM") == 1
-                         and "ASSET 05 OFF $0123" in line
+    results.append(check(num(rows, "PASSES") == 1 and num(rows, "BAD DATA") == 1
+                         and "ASSET 200 OFF $0123" in line
                          and f"GOT ${want ^ 0x5A:02X}  WANT ${want:02X}" in line,
-                         "stress: a corrupted byte -> BAD SUM 1, ASSET 05 OFF $0123, "
+                         "stress: a corrupted byte -> BAD DATA 1, ASSET 200 OFF $0123, "
                          "the bytes read and wanted"))
     # stale build_id: every open fails with E4; the first poll stops it
     stale = bytearray(img)

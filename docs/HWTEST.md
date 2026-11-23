@@ -27,7 +27,7 @@ Each test has its own folder and Makefile (`make`, `make verify`, `make clean`).
 | `HWTEST.DSK` | 35-track disk: `HWTEST.BIN`, `AUTOEXEC.BAS`, and the test assets in `DMPKG.DAT` |
 | `HWBIG.DSK` | the same assets plus fillers, so a `TAIL` asset lands past track 34. The image is padded to 737,792 bytes (the size the SDC takes as a hard disk image) |
 | `HWTEST.SDS` | a bare stream image that the loaders mount by name |
-| `STRESS.DSK` | the [stress test](#stress-test): 64 assets of 8K that `STRESS.BIN` streams and checks over and over |
+| `STRESS.DSK` | the [stress test](#stress-test): 256 assets of 8K (2M) that `STRESS.BIN` streams and checks over and over |
 
 `make test` builds them too, and runs both loaders against the SDC model first, on a CoCo 2 and a CoCo 3. That covers a clean run, a corrupted asset, and a missing `HWTEST.SDS`.
 
@@ -116,15 +116,15 @@ How to read them: if `RESTART MS` is close to `BLOCK MS`, or smaller, then the r
 
 ## Stress test
 
-`STRESS.DSK` streams the same 512K again and again and checks every byte, to catch errors that only turn up now and then (like an occasional `LOAD ERROR 4`). Copy it to the card and mount it on its own: `DRIVE 0,"STRESS.DSK"`, then `RUN"AUTOEXEC"` or `LOADM"STRESS":EXEC`. It runs until you press a key, then returns to BASIC.
+`STRESS.DSK` streams the same 2M again and again and checks every byte, to catch errors that only turn up now and then (like an occasional `LOAD ERROR 4`). Copy it to the card and mount it on its own: `DRIVE 0,"STRESS.DSK"`, then `RUN"AUTOEXEC"` or `LOADM"STRESS":EXEC`. It runs until you press a key, then returns to BASIC.
 
-Each pass opens the disk, so the header and build_id check runs every pass. Then it loads the 64 assets one after another into `$4000-$5FFF`, in image order, so it's one stream except where it jumps to the first asset and past track 17. Asset k holds a rolling pattern: byte i is `(i + i/256 + 37k) mod 256`, so a dropped, repeated or swapped byte, or the wrong asset, changes it. After each load the loader takes the asset's Fletcher sums (as in the hardware test) and compares them with the table `hwtest/stress/mkstress.py` wrote.
+Each pass opens the disk, so the header and build_id check runs every pass. Then it loads the 256 assets one after another into `$4000-$5FFF`, in image order, so it's one stream except where it jumps to the first asset and past track 17. The assets are one stream from a 16-bit Galois LFSR (taps `$B400`, period 65535), stepped once per byte, with its low byte as the data. It starts from a fixed seed at the first asset and runs on from each asset into the next, so a dropped, repeated or swapped byte, or the wrong asset, changes the bytes. The loader runs the same LFSR alongside the data and compares every byte (`hwtest/stress/mkstress.py` writes the assets from the same LFSR). Comparing every byte catches what a checksum could miss, and gives the first wrong byte at once.
 
 ```
 DMPKG STRESS TEST  ANY KEY STOPS
 
 PASSES        123
-BAD SUM         0
+BAD DATA        0
 OPEN ERRORS     0
 LOAD ERRORS     0
 
@@ -132,17 +132,17 @@ E1     0  E2     0  E3     0
 E4     0  E5     0  E6     0
 E7     0
 
-ASSET    OFF $
+ASSET     OFF $
 GOT $    WANT $
 
 LAST ERROR
 ```
 
-- `PASSES`: whole passes of all 64 assets.
-- `BAD SUM`: assets whose sums were wrong. For the last one, `ASSET` and `OFF` give the asset and the offset of its first wrong byte, and `GOT` and `WANT` the byte read and the one the pattern wanted (`OFF $FFFF` means the sums were off but every byte matched).
+- `PASSES`: whole passes of all 256 assets.
+- `BAD DATA`: assets with a wrong byte. For the last one, `ASSET` and `OFF` give the asset and the offset of its first wrong byte, and `GOT` and `WANT` the byte read and the one the LFSR wanted.
 - `OPEN ERRORS`, `LOAD ERRORS`: errors from `dmpkg_open` (and `dmpkg_init`) and from `dmpkg_load`, also counted by code under `E1`-`E7` ([error codes](RUNTIME.md#error-codes)). `LAST ERROR` says where the last one happened. After an error the pass starts over.
 
-A pass takes roughly 10 seconds at 1.79 MHz and twice that at 0.89 MHz (18 million cycles in the model, whose SDC timing is only a guess). Try both speeds (`POKE 65497,0` before `LOADM` for 1.79 MHz on a CoCo 3), and leave it running for a few hundred passes. A clean run has `PASSES` going up and every other count at 0.
+A pass takes roughly 45 seconds at 1.79 MHz and twice that at 0.89 MHz (84 million cycles in the model, whose SDC timing is only a guess). Try both speeds (`POKE 65497,0` before `LOADM` for 1.79 MHz on a CoCo 3), and leave it running for a few hours (a few hundred passes). A clean run has `PASSES` going up and every other count at 0.
 
 `make test` runs the stress loader against the SDC model too: a clean pass, a byte corrupted on the disk (found, with its offset and both bytes), and a stale build_id (`E4` at open).
 
@@ -161,4 +161,4 @@ A pass takes roughly 10 seconds at 1.79 MHz and twice that at 0.89 MHz (18 milli
 | `hwtest/main/disk.yaml`, `big.yaml`, `stream.yaml` | the three manifests. `T_BLK` and `T_RUN` are the timing assets, both loaded to `$4000`. The stream image's symbols have an `S_` prefix, so the loaders can include them next to their own |
 | `hwtest/main/mkhw.py` | writes the assets (fixed seed) and `build/hwsums.inc`, the checksum table. It sizes `big.yaml`'s `GAP` filler from `disk.yaml`'s layout |
 | `hwtest/main/Makefile` | builds `HWTEST.SDS` first (the disks' loaders include its symbols), then each disk in two passes |
-| `hwtest/stress/stress.asm`, `stress.yaml`, `mkstress.py`, `Makefile` | the stress test: its loader, its manifest, the generator for its 64 pattern assets and `build/ssums.inc` (their checksum table), and its Makefile |
+| `hwtest/stress/stress.asm`, `stress.yaml`, `mkstress.py`, `Makefile` | the stress test: its loader, its manifest, the generator for its 256 LFSR assets and `build/stress.inc` (the constants the loader checks them with), and its Makefile |

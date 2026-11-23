@@ -5,7 +5,7 @@
 | folder | what it does | images |
 |---|---|---|
 | [main/](main/README.md) | the hardware test: one pass over every case a loader can check by itself (presence and version, STREAM from a mounted disk, mount by name, phys loads, past track 34, timing), with a result per cell | `HWTEST.DSK`, `HWBIG.DSK`, `HWTEST.SDS` |
-| [stress/](stress/README.md) | the stress test: streams the same 512K over and over and checks every byte, to catch errors that only turn up now and then | `STRESS.DSK` |
+| [stress/](stress/README.md) | the stress test: streams the same 2M over and over and checks every byte, to catch errors that only turn up now and then | `STRESS.DSK` |
 
 ```sh
 make            # build and verify both (make hwtest at the top does the same)

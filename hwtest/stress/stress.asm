@@ -3,11 +3,11 @@
 ;
 ; Lives on STRESS.DSK as STRESS.BIN; AUTOEXEC.BAS runs it, or type
 ; LOADM"STRESS":EXEC. Each pass opens the disk it came from (so the header
-; and build_id check runs every pass too), streams its 64 assets of 8K
-; (512K) one after another into $4000-$5FFF, and checks each one's Fletcher
-; sums against the table mkstress.py wrote. Asset k holds a rolling pattern
-; (byte i = i + i/256 + 37k), so after a bad sum the loader finds the first
-; wrong byte and shows where it was, what it read and what it wanted.
+; and build_id check runs every pass too), streams its 256 assets of 8K
+; (2M) one after another into $4000-$5FFF, and checks every byte. The
+; assets are one stream from a 16-bit LFSR (mkstress.py), which the loader
+; runs alongside, so at the first wrong byte of an asset it shows where it
+; was, what it read and what it wanted.
 ; Errors from dmpkg_open or dmpkg_load are counted by code, and the pass
 ; starts over. It runs until a key is pressed, then returns to BASIC.
 ;
@@ -35,7 +35,7 @@ start   pshs    cc
         jsr     dmpkg_init      ; SDC there, firmware 117 or later
         bcc     pass
         ldb     #$FE            ; error at init
-        lbsr    error
+        lbsr    operror
         lbsr    show
         lbra    quit
 
@@ -45,26 +45,26 @@ pass    ldx     #DMPKG_MountName ; 0: the disk already in drive 0
         jsr     dmpkg_open
         bcc     @open
         ldb     #$FF            ; error at open
-        lbsr    error
+        lbsr    operror
         bra     endpass
-@open   clr     k
-        ldx     #S00
+@open   ldd     #STRESS_SEED    ; the stream starts over
+        std     lfsr
+        clr     k
+        ldx     #S000
         stx     desc
 @asset  ldx     desc
         jsr     dmpkg_load
         bcc     @loaded
-        ldb     k               ; error loading asset k
-        lbsr    error
+        lbsr    error           ; error loading asset k
         bra     endpass
-@loaded lbsr    check           ; sums against the table, find a bad byte
+@loaded lbsr    check           ; every byte against the LFSR
         jsr     [POLCAT]        ; a key stops the test
         bne     stop
+        inc     k
         ldx     desc
         leax    DMPKG_DESC_SIZE,x
         stx     desc
-        inc     k
-        lda     k
-        cmpa    #STRESS_N
+        cmpx    #S000+STRESS_N*DMPKG_DESC_SIZE
         blo     @asset
         ldd     passes          ; a whole pass
         addd    #1
@@ -79,15 +79,18 @@ quit    ldx     #TEXT+15*32     ; BASIC's OK on the bottom line
         stx     CURPOS
         puls    cc,pc
 
-; error: A = dmpkg error code, B = asset, $FF at open or $FE at init.
-; Counts it by where and by code, and keeps it as the last error.
-error   sta     ecode
-        stb     ewhere
-        ldx     #operr          ; open (and init) errors
-        cmpb    #STRESS_N
-        bhs     @where
+; error: A = dmpkg error code, loading asset k. operror: the same with
+; B = $FF at open or $FE at init. Counts it by where and by code, and keeps
+; it as the last error.
+error   ldb     k
+        stb     easset
+        clrb                    ; 0: at an asset
         ldx     #lderr          ; load errors
-@where  lbsr    inc16
+        bra     @count
+operror ldx     #operr          ; open (and init) errors
+@count  sta     ecode
+        stb     ewhere
+        lbsr    inc16
         ldx     #codes
         lda     ecode           ; (inc16 used A)
         anda    #7
@@ -101,67 +104,62 @@ inc16   ldd     ,x
         std     ,x
         rts
 
-; check: Fletcher sums of the asset at BUF against StressSums[k]. On a
-; mismatch, count it and find the first byte off the pattern.
-check   ldx     #BUF
-        clra                    ; D = sum1
-        clrb
-        ldu     #0              ; U = sum2
-@sum    addb    ,x+
-        adca    #0
-        leau    d,u
-        addb    ,x+
-        adca    #0
-        leau    d,u
-        addb    ,x+
-        adca    #0
-        leau    d,u
-        addb    ,x+
-        adca    #0
-        leau    d,u
-        cmpx    #BUF+STRESS_SIZE
-        blo     @sum
-        pshs    d
-        ldb     k               ; Y = StressSums + 4k
-        clra
-        lslb
-        rola
-        lslb
-        rola
-        ldy     #StressSums
-        leay    d,y
-        puls    d
-        cmpd    ,y
-        bne     @bad
-        cmpu    2,y
-        bne     @bad
-        rts
-@bad    ldx     #badsum
-        lbsr    inc16
-        lda     k
-        sta     bk
-        ldb     #STRESS_STEP    ; A = byte 0 of asset k: 37k
-        mul
-        tfr     b,a
+; check: the asset at BUF against the LFSR stream, four bytes a loop
+; (STRESS_SIZE is a multiple of 4). At the first wrong byte, count it, keep
+; where it was and both bytes, then step the LFSR to the end of the asset so
+; the next one starts from the right state.
+check   ldd     lfsr
         ldx     #BUF
-@page   clrb                    ; 256 bytes a page
-@byte   cmpa    ,x+
-        bne     @found
-        inca
-        decb
-        bne     @byte
-        inca                    ; the i/256 term
+@byte
+        lsra                    ; step the LFSR (A:B)
+        rorb
+        bcc     @s1
+        eora    #STRESS_TAPS
+@s1     cmpb    ,x+             ; the byte is its low byte
+        bne     @bad
+        lsra
+        rorb
+        bcc     @s2
+        eora    #STRESS_TAPS
+@s2     cmpb    ,x+
+        bne     @bad
+        lsra
+        rorb
+        bcc     @s3
+        eora    #STRESS_TAPS
+@s3     cmpb    ,x+
+        bne     @bad
+        lsra
+        rorb
+        bcc     @s4
+        eora    #STRESS_TAPS
+@s4     cmpb    ,x+
+        bne     @bad
         cmpx    #BUF+STRESS_SIZE
-        blo     @page
-        ldd     #$FFFF          ; sums off but every byte right
-        std     boff
+        blo     @byte
+        std     lfsr
         rts
-@found  sta     bwant
+@bad    pshs    d,x
+        stb     bwant
         lda     -1,x
         sta     bgot
         tfr     x,d
         subd    #BUF+1
         std     boff
+        lda     k
+        sta     bk
+        ldx     #baddata
+        lbsr    inc16
+        puls    d,x
+@rest   cmpx    #BUF+STRESS_SIZE ; the rest of the asset, unchecked
+        bhs     @done
+        lsra
+        rorb
+        bcc     @r
+        eora    #STRESS_TAPS
+@r      leax    1,x
+        bra     @rest
+@done   std     lfsr
         rts
 
 ; ---- screen: VDG codes, written straight to the text screen
@@ -196,12 +194,12 @@ putc    cmpa    #$40
 @store  sta     ,x+
         rts
 
-; show: the counters and the last bad sum and error
+; show: the counters and the last bad byte and error
 show    ldx     #TEXT+2*32+12
         ldd     passes
         lbsr    dec5
         ldx     #TEXT+3*32+12
-        ldd     badsum
+        ldd     baddata
         lbsr    dec5
         ldx     #TEXT+4*32+12
         ldd     operr
@@ -216,12 +214,12 @@ show    ldx     #TEXT+2*32+12
         lbsr    dec5
         cmpu    #CodePos+14
         blo     @code
-        ldd     badsum          ; last bad sum
+        ldd     baddata         ; last bad byte
         beq     @noerr
         ldx     #TEXT+11*32+6
         lda     bk
-        lbsr    dec2
-        ldx     #TEXT+11*32+14
+        lbsr    dec3
+        ldx     #TEXT+11*32+15
         ldd     boff
         lbsr    hex4
         ldx     #TEXT+12*32+5
@@ -248,8 +246,8 @@ show    ldx     #TEXT+2*32+12
         beq     @what
         ldy     #MsgAsset
         lbsr    puts
-        lda     ewhere
-        bra     dec2
+        lda     easset
+        bra     dec3
 @what   lbra    puts
 @done   rts
 
@@ -286,8 +284,19 @@ dec5    pshs    y
         leas    1,s
         puls    y,pc
 
-; dec2: A (0-99) as 2 decimal digits at X+
-dec2    clrb
+; dec3: A (0-255) as 3 decimal digits at X+
+dec3    clrb
+@hunds  cmpa    #100
+        blo     @tens0
+        suba    #100
+        incb
+        bra     @hunds
+@tens0  pshs    a
+        tfr     b,a
+        adda    #'0
+        lbsr    putc
+        puls    a
+        clrb
 @tens   cmpa    #10
         blo     @ones
         suba    #10
@@ -329,7 +338,7 @@ Labels  fdb     TEXT+0*32
         fdb     TEXT+2*32
         fcn     "PASSES"
         fdb     TEXT+3*32
-        fcn     "BAD SUM"
+        fcn     "BAD DATA"
         fdb     TEXT+4*32
         fcn     "OPEN ERRORS"
         fdb     TEXT+5*32
@@ -341,7 +350,7 @@ Labels  fdb     TEXT+0*32
         fdb     TEXT+9*32
         fcn     "E7"
         fdb     TEXT+11*32
-        fcn     "ASSET    OFF $"
+        fcn     "ASSET     OFF $"
         fdb     TEXT+12*32
         fcn     "GOT $    WANT $"
         fdb     TEXT+14*32
@@ -354,24 +363,26 @@ MsgAsset fcn    "AT ASSET "
 ; ---- counters (cleared at start)
 vars
 passes  rmb     2               ; whole passes
-badsum  rmb     2               ; assets with bad sums
+baddata rmb     2               ; assets with a wrong byte
 operr   rmb     2               ; errors at init or open
 lderr   rmb     2               ; errors loading an asset
 codes   rmb     16              ; errors by code, 0-7
 ecode   rmb     1               ; last error: code, 0 for none
-ewhere  rmb     1               ;   asset, $FF open, $FE init
-bk      rmb     1               ; last bad sum: asset
+ewhere  rmb     1               ;   0 asset, $FF open, $FE init
+easset  rmb     1               ;   the asset, when at one
+bk      rmb     1               ; last bad byte: asset
 boff    rmb     2               ;   offset of the first bad byte
 bgot    rmb     1               ;   byte read
 bwant   rmb     1               ;   byte wanted
 k       rmb     1               ; asset being loaded
 desc    rmb     2               ; its descriptor
+lfsr    rmb     2               ; LFSR state for the next byte
 varend
 
         include "dmpkg.asm"
         include "assets.inc"
         include "assettab.asm"
-        include "ssums.inc"
+        include "stress.inc"
 
 ; must end below $2600 (AUTOEXEC.BAS is at $2601): run_test.py checks it
 

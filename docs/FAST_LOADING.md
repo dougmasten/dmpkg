@@ -115,5 +115,5 @@ These come up as ways to speed up loading. Each was measured or worked through f
 ## Measure before you optimise
 
 - **Hardware test:** `BLOCK MS` is the real time per 512-byte block, `RESTART MS` the extra cost of a restart. If `BLOCK MS` is close to the copy's 1.6 ms of CPU time per block, loads are limited by the CPU, and CPU speed and fewer instructions help. If it's well above, the SDC is the limit, and only fewer restarts help.
-- **Stress test:** checks a change didn't make loads less reliable. Run it for a few hundred passes at the speed the loader uses.
+- **Stress test:** checks a change didn't make loads less reliable. Run it for a few hours (a few hundred passes) at the speed the loader uses.
 - **Emulator:** the repack tests print the cycles a load takes, which is a quick way to compare two versions of a loader or the runtime. They count CPU work, not the SDC's real timing.

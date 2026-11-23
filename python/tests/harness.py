@@ -329,10 +329,10 @@ class Machine:
         """LOADM-style: load (addr, data) segments, jsr entry, stop at its rts."""
         for addr, data in segs:
             self.mem.load(addr, data)
-        ret = 0x0F80
-        self.mem.load(ret, b"\x20\xfe")              # bra * (never reached)
-        self.cpu.system_stack_pointer.set(0x0EFE)
-        self.mem.load(0x0EFE, ret.to_bytes(2, "big"))
+        ret = 0x7F80                                # near the top of 32K, like
+        self.mem.load(ret, b"\x20\xfe")              # BASIC's stack (bra *, never reached)
+        self.cpu.system_stack_pointer.set(0x7EFE)
+        self.mem.load(0x7EFE, ret.to_bytes(2, "big"))
         self.cpu.program_counter.set(entry)
         for _ in range(max_ops):
             if self.cpu.program_counter.value == ret:
