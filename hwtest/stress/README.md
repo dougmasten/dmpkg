@@ -18,7 +18,7 @@ make clean
 
 ## Run
 
-You need CoCo SDC firmware 1.17 or later and 32K or more.
+You need CoCo SDC firmware 117 or later and 32K or more.
 
 1. Copy `STRESS.DSK` to the SD card and mount it on its own: `DRIVE 0,"STRESS.DSK"`.
 2. Cold-start (`AUTOEXEC.BAS` runs it) or type `LOADM"STRESS":EXEC`. On a CoCo 3, `POKE 65497,0` first to test at 1.79 MHz.

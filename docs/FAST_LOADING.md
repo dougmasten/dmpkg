@@ -28,7 +28,7 @@ The CoCo SDC's command mode has two ways to read an image. The details below com
 | Order | any sector, any order | forward only; going anywhere else means `$D0` (abort) and a new `STREAM` |
 | Writes | yes (`$An`) | no |
 | Images | any, including JVC/VDK headers and SDF | headerless images and raw files only; others end the command at once |
-| Firmware | all versions | 1.17 and later |
+| Firmware | all versions | 117 and later |
 
 Both read the data the same way: pairs from `$FF4A`/`$FF4B`, 2 bytes per `LDD` or `LDU`. So the CPU's copy costs the same either way. The difference is everything around it.
 - **Sector reads:** every 256 bytes pay for a full command: setting it up, the 20 µs the guide asks for after it, the SDC finding the sector on the card, and the final BUSY wait.

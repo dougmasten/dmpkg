@@ -35,7 +35,7 @@ Each test has its own folder and Makefile (`make`, `make verify`, `make clean`).
 
 You need:
 
-- CoCo SDC firmware 1.17 or later
+- CoCo SDC firmware 117 or later
 - SDC-DOS 1.3 or later for `AUTOEXEC.BAS`; on older SDC-DOS, type `LOADM"HWTEST":EXEC`
 - 32K of RAM or more
 
@@ -53,7 +53,7 @@ On a CoCo 3, also try both disks at double speed: `POKE 65497,0` before `LOADM`.
 
 ```
 DMPKG HARDWARE TEST  HWTEST
-SDC FW     1.28 COCO 3
+SDC FW     128 COCO 3
 BAD ID     OK   OPEN       OK
 STOP       OK   A_ODD      OK
 B_PACK     OK   C_MULTI    OK
@@ -150,7 +150,7 @@ A pass takes roughly 45 seconds at 1.79 MHz and twice that at 0.89 MHz (84 milli
 
 - **Drive 1** (`DMPKG_DRIVE equ 1`). The loader is built for drive 0.
 - **The no-SDC path** (`E1` without waiting for a timeout) on a machine with a regular floppy controller and no SDC. The test disk can't be run from such a machine without the SDC, so this needs a real floppy holding `HWTEST.BIN`.
-- **Firmware older than 1.17** (`E2`). Getting it would mean downgrading the SDC.
+- **Firmware older than 117** (`E2`). Getting it would mean downgrading the SDC.
 
 ## Files
 

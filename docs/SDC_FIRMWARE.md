@@ -1,6 +1,6 @@
 # CoCo SDC firmware versions
 
-What each CoCo SDC MCU firmware version added, and which of those features dmpkg relies on. `dmpkg_init` returns the version in BCD (and keeps it in `dmpkg_ver`), so 1.17 comes back as `$0117`.
+What each CoCo SDC MCU firmware version added, and which of those features dmpkg relies on. `dmpkg_init` returns the version in BCD (and keeps it in `dmpkg_ver`), so 117 comes back as `$0117`.
 
 The firmware entries come from the official `Changes.pdf` that ships with each firmware package. They're quoted closely, with notes from a disassembly of the MCU firmware where it shows more. SDC-DOS (the Disk BASIC in the controller's flash) has its own version numbers and is listed separately.
 
@@ -8,8 +8,8 @@ The firmware entries come from the official `Changes.pdf` that ships with each f
 
 | version | feature | used for |
 |---|---|---|
-| 1.17 | `STREAM` command (`$90`/`$91`) | everything `dmpkg_load` does. `dmpkg_init` refuses older firmware with `DMPKG_EVER` (`DMPKG_MINVER`, default `$0117`) |
-| before 1.17 | `VERSION` query (`$C0`, `$FF49` = `'V'`) | the firmware check. Firmware without it answers FAILED, which `dmpkg_init` counts as version 0 (`DMPKG_EVER`). The runtime takes 1.13 as the first version with it; the official change list starts at 1.15, so that's unconfirmed |
+| 117 | `STREAM` command (`$90`/`$91`) | everything `dmpkg_load` does. `dmpkg_init` refuses older firmware with `DMPKG_EVER` (`DMPKG_MINVER`, default `$0117`) |
+| before 117 | `VERSION` query (`$C0`, `$FF49` = `'V'`) | the firmware check. Firmware without it answers FAILED, which `dmpkg_init` counts as version 0 (`DMPKG_EVER`). The runtime takes 113 as the first version with it; the official change list starts at 115, so that's unconfirmed |
 | SDC-DOS 1.3 | `AUTOEXEC.BAS` at power-on | starting the loader on a [disk image](DISK.md). Optional: without it, run the loader by hand |
 
 Two firmware behaviours that differ from the User Guide, both seen in the disassembly and handled by the runtime:
@@ -21,18 +21,18 @@ Two firmware behaviours that differ from the User Guide, both seen in the disass
 
 | version | date | changes |
 |---|---|---|
-| 1.29 | Oct 6, 2025 | SDC Explorer could report *Directory Not Found* in folders extracted from some archives (the `.` and `..` entries had the hidden attribute). New files dated Oct 6, 2025 |
-| 1.28 | Feb 22, 2024 | Fixes two 1.27 regressions: the NitrOS-9 SDC driver failed under 6309 native Level 2, and VDK images with a 256-byte header couldn't be used. New files dated Feb 22, 2024 |
-| 1.27 | Feb 27, 2023 | More robust FDC emulation with SDF images (CRC errors and deleted data marks reported, early CRC in ID fields recognised when formatting). Command to switch to a specific image in a disk set (`$C0 '#'`). 8-bit transfer option for Write Logical Sector, so a 6309 `TFM` can be used. Mount or create files that aren't disk images (`m:` and `n:`): no size or header checks, reached only through the LBA sector commands or `STREAM`. New files dated Feb 27, 2023 |
-| 1.22–1.26 | — | never released: the change list goes from 1.21 straight to 1.27 |
-| 1.21 | May 30, 2020 | Single-density formatting of SDF images fixed. New files dated May 30, 2020 |
-| 1.20 | Jul 24, 2017 | "Query Disk Size" (`$C0 'Q'`) returned only the low 16 bits of its 24-bit result. New files dated Jul 24, 2017 |
-| 1.19 | Jun 9, 2017 | Timing bug in floppy emulation on a CoCo 3 at double speed with a 6309 in native mode. New files dated Jun 9, 2017 |
-| 1.17 | Apr 16, 2017 | **`STREAM` I/O command**, "to aid in the development of Media Player programs". New files dated the firmware's build date; an image's modification time goes up 2 seconds if it was written to during a session |
-| 1.16 | Dec 4, 2015 | VDK headers of 12 to 256 bytes recognised (1.15 took only 12) |
-| 1.15 | — | JVC and VDK image headers. Dragon DOS controller (WD2797) emulation with the DRGN switch (and the DRQ jumper). Firmware FAT operations: delete, rename, make directory, query file size (through DSKCON or the hardware only). `D=` current directory line in `STARTUP.CFG` |
+| 129 | Oct 6, 2025 | SDC Explorer could report *Directory Not Found* in folders extracted from some archives (the `.` and `..` entries had the hidden attribute). New files dated Oct 6, 2025 |
+| 128 | Feb 22, 2024 | Fixes two 127 regressions: the NitrOS-9 SDC driver failed under 6309 native Level 2, and VDK images with a 256-byte header couldn't be used. New files dated Feb 22, 2024 |
+| 127 | Feb 27, 2023 | More robust FDC emulation with SDF images (CRC errors and deleted data marks reported, early CRC in ID fields recognised when formatting). Command to switch to a specific image in a disk set (`$C0 '#'`). 8-bit transfer option for Write Logical Sector, so a 6309 `TFM` can be used. Mount or create files that aren't disk images (`m:` and `n:`): no size or header checks, reached only through the LBA sector commands or `STREAM`. New files dated Feb 27, 2023 |
+| 122–126 | — | never released: the change list goes from 121 straight to 127 |
+| 121 | May 30, 2020 | Single-density formatting of SDF images fixed. New files dated May 30, 2020 |
+| 120 | Jul 24, 2017 | "Query Disk Size" (`$C0 'Q'`) returned only the low 16 bits of its 24-bit result. New files dated Jul 24, 2017 |
+| 119 | Jun 9, 2017 | Timing bug in floppy emulation on a CoCo 3 at double speed with a 6309 in native mode. New files dated Jun 9, 2017 |
+| 117 | Apr 16, 2017 | **`STREAM` I/O command**, "to aid in the development of Media Player programs". New files dated the firmware's build date; an image's modification time goes up 2 seconds if it was written to during a session |
+| 116 | Dec 4, 2015 | VDK headers of 12 to 256 bytes recognised (115 took only 12) |
+| 115 | — | JVC and VDK image headers. Dragon DOS controller (WD2797) emulation with the DRGN switch (and the DRQ jumper). Firmware FAT operations: delete, rename, make directory, query file size (through DSKCON or the hardware only). `D=` current directory line in `STARTUP.CFG` |
 
-1.18 isn't in the change list. The official list doesn't go back before 1.15. SDC-DOS's `SETUP` needs MCU firmware 1.10 or later to install an update.
+118 isn't in the change list. The official list doesn't go back before 115. SDC-DOS's `SETUP` needs MCU firmware 110 or later to install an update.
 
 ## SDC-DOS
 
@@ -47,4 +47,4 @@ Two firmware behaviours that differ from the User Guide, both seen in the disass
 
 ## Possible future use
 
-1.27's `m:` mounts any file as raw sectors, with no size check. A stream image mounted that way wouldn't need padding to `$14400` bytes (`min_size`), at the cost of requiring 1.27. dmpkg doesn't use it yet: `M:` works from 1.17 on.
+Firmware 127's `m:` mounts any file as raw sectors, with no size check. A stream image mounted that way wouldn't need padding to `$14400` bytes (`min_size`), at the cost of requiring 127. dmpkg doesn't use it yet: `M:` works from 117 on.

@@ -86,7 +86,7 @@
 ;   DMPKG_DELAY    12     settle loop before polling READY (8 cyc/pass: ~54us at
 ;                         1.79MHz; the SDC needs ~20us to update READY; 1-65535)
 ;   DMPKG_TIMEOUT  16     poll timeout, units of 65536 polls (1-255)
-;   DMPKG_MINVER   $0117  lowest firmware dmpkg_init accepts (1.17 added STREAM)
+;   DMPKG_MINVER   $0117  lowest firmware dmpkg_init accepts (117 added STREAM)
 ;
 ; State: 17 bytes in dmpkg_vars.asm, placed after the code. To put them
 ; elsewhere (e.g. the direct page), include dmpkg_vars.asm before this file.

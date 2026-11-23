@@ -36,7 +36,7 @@ def hwtest_test():
             what = f"hwtest {disk} on a CoCo {3 if coco3 else 2}"
             cells = " ".join(text)
             results.append(check(fails == 0 and text[-1] == "ALL PASSED"
-                                 and "SDC FW     1.27" in cells
+                                 and "SDC FW     127" in cells
                                  and ("F_PHYS     OK" if coco3 else "F_PHYS     SKIP") in cells
                                  and ("TAIL       OK" in cells) == (disk == "HWBIG.DSK")
                                  and m.sdc.mounted == disk,

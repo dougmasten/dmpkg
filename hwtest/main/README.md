@@ -19,7 +19,7 @@ make clean
 
 ## Run
 
-You need CoCo SDC firmware 1.17 or later, SDC-DOS 1.3 or later for `AUTOEXEC.BAS`, and 32K or more.
+You need CoCo SDC firmware 117 or later, SDC-DOS 1.3 or later for `AUTOEXEC.BAS`, and 32K or more.
 
 1. Copy the three images into **one folder** on the SD card, and make it the SDC's current directory (`DIR "folder"`, or use the card root). The loaders mount `HWTEST.SDS`, and then their own disk again, by name with no path.
 2. `DRIVE 0,"HWTEST.DSK"`, then cold-start (`AUTOEXEC.BAS` runs it) or type `LOADM"HWTEST":EXEC`.

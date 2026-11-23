@@ -682,15 +682,13 @@ newrow  ldd     cursor
         std     cursor
         rts
 
-; fmtver: D = BCD version ($0128) -> "1.28" in vbuf
+; fmtver: D = BCD version ($0128) -> "128" in vbuf
 fmtver  ldx     #vbuf
         pshs    b
         cmpa    #$10
         blo     @one
         bsr     hexhi
 @one    bsr     hexlo
-        ldb     #'.'
-        stb     ,x+
         puls    a
         bsr     hexhi
         bsr     hexlo
