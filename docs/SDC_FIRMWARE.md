@@ -17,6 +17,8 @@ Two firmware behaviours that differ from the User Guide, both seen in the disass
 - A failed stream (abort, start past the end of the file, card error) ends with status `$08` and **no** FAILED bit. `dmpkg_load` treats a stream that ends with `$08` as `DMPKG_EFAIL`.
 - Images with a header (JVC, VDK), SDF images and VDKs that skip a sector aren't streamed: the command ends at once with status `$00`. dmpkg images are headerless, so this doesn't come up.
 
+And one the User Guide doesn't mention: how fast the data can be read. The MCU (an ATmega328P at 10 MHz) refills `$FF4A` about 1.3 µs and `$FF4B` about 1.8 µs after it notices the CPU's `$FF4B` read, and its 16-bit stream loop takes at least 3.6 µs a pair. Nothing makes the CPU wait: a read that comes too soon gets the old byte. So reading pairs back to back is too fast at 1.79 MHz (6 cycles = 3.35 µs for `LDD $FF4A`; 5 cycles on a 6309 in native mode). The copy loop takes 11 cycles a pair, enough up to about 3 MHz. The SDC model in the tests enforces this ([TESTING.md](TESTING.md)).
+
 ## MCU firmware
 
 | version | date | changes |

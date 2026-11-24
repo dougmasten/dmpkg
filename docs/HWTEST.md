@@ -47,7 +47,7 @@ Steps:
 
 A run takes a few seconds and returns to BASIC. `A` holds the number of failures, but BASIC doesn't show it, so read the screen.
 
-On a CoCo 3, also try both disks at double speed: `POKE 65497,0` before `LOADM`. The runtime's settle delay (`DMPKG_DELAY`) is sized for 0.89 MHz to 1.79 MHz, so this is the case most likely to fail.
+On a CoCo 3, also try both disks at double speed: `POKE 65497,0` before `LOADM`. Reads come fastest at this speed, so it's the case most likely to fail.
 
 ## Reading the screen
 
@@ -142,7 +142,7 @@ LAST ERROR
 - `BAD DATA`: assets with a wrong byte. For the last one, `ASSET` and `OFF` give the asset and the offset of its first wrong byte, and `GOT` and `WANT` the byte read and the one the LFSR wanted.
 - `OPEN ERRORS`, `LOAD ERRORS`: errors from `dmpkg_open` (and `dmpkg_init`) and from `dmpkg_load`, also counted by code under `E1`-`E7` ([error codes](RUNTIME.md#error-codes)). `LAST ERROR` says where the last one happened. After an error the pass starts over.
 
-A pass takes roughly 45 seconds at 1.79 MHz and twice that at 0.89 MHz (84 million cycles in the model, whose SDC timing is only a guess). Try both speeds (`POKE 65497,0` before `LOADM` for 1.79 MHz on a CoCo 3), and leave it running for a few hours (a few hundred passes). A clean run has `PASSES` going up and every other count at 0.
+A pass takes roughly 30 seconds at 1.79 MHz and twice that at 0.89 MHz (54 million cycles of CPU work in the model, plus the card's own time between blocks, which the model only guesses). Try both speeds (`POKE 65497,0` before `LOADM` for 1.79 MHz on a CoCo 3), and leave it running for a few hours (a few hundred passes). A clean run has `PASSES` going up and every other count at 0.
 
 `make test` runs the stress loader against the SDC model too: a clean pass, a byte corrupted on the disk (found, with its offset and both bytes), and a stale build_id (`E4` at open).
 

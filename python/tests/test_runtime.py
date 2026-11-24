@@ -10,6 +10,7 @@ while a stream runs, a card that stalls, no SDC, and the firmware gate.
 """
 import os
 import random
+import re
 import shutil
 import sys
 import tempfile
@@ -19,6 +20,7 @@ from harness import *  # noqa: F401,F403  (the model, the machine, helpers)
 
 
 TEST_ASM = r"""
+        opt     c                   cycle counts in the listing (cycle check)
         org     $1000
         bra     start
 done    bra     done                fixed at $1002 - harness stops here
@@ -117,6 +119,67 @@ fail    sta     $0100
         include "assets.inc"
         include "assettab.asm"
 """
+
+
+def listing_cycles(lst):
+    """{address: (cycles, variable)} from an lwasm listing made with opt c;
+    variable for a long branch ([5+?]: one more when taken)."""
+    out = {}
+    with open(lst) as f:
+        for ln in f:
+            mt = re.match(r"([0-9A-F]{4}) [0-9A-F]+\s.*?\):\d+\s+\[([0-9+?]+)\]\s+(.*)", ln)
+            if mt:
+                parts = mt[2].split("+")
+                out[int(mt[1], 16)] = (sum(int(x) for x in parts if x != "?"),
+                                       "?" in parts, mt[3].strip())
+    return out
+
+
+def check_cycles(m, lst, chk):
+    """Run with every instruction's cycles compared to lwasm's count."""
+    want = listing_cycles(lst)
+    bad, seen = {}, set()
+
+    def trace(pc, n):
+        w = want.get(pc)
+        if w is None:
+            return
+        seen.add(pc)
+        if n != w[0] and not (w[1] and n == w[0] + 1):
+            bad[pc] = (n, w)
+    m.trace = trace
+    return seen, bad
+
+
+def stream_rule(chk):
+    """The firmware's refill time, on the model alone: pairs read as fast as
+    back-to-back LDDs are caught, pairs at the copy loop's pace aren't."""
+    class Clock:
+        cycles = 0
+
+    def pairs(mhz, gap, n):
+        clk = Clock()
+        sdc = MockSDC(clk, {"S.DSK": bytes(1024)}, mounted="S.DSK", mhz=mhz)
+        sdc.cmdmode = True
+        sdc.write_cmd(None, None, 0xFF48, 0x90)
+        clk.cycles = FILL_TIME
+        try:
+            for i in range(n):
+                sdc.read_data(None, None, 0xFF4A)
+                sdc.read_data(None, None, 0xFF4B)
+                clk.cycles += gap
+        except SDCError as e:
+            return i, str(e)
+        return n, None
+
+    got, err = pairs(2.15, 6, 3)                    # 6 cycles at 2.15 MHz: 5 at 1.79
+    chk(got == 2 and "before the MCU refilled it" in err,
+        f"SDC model: the old header's 3 LDDs, 5 cycles apart (6309 native, 1.79 MHz), "
+        f"caught at pair {got}")
+    got, err = pairs(1.79, 6, 256)
+    chk(err is not None, f"SDC model: back-to-back LDDs at 1.79 MHz caught by pair {got}")
+    got, err = pairs(1.79, 11, 256)
+    chk(err is None, "SDC model: a whole block at the copy loop's 11 cycles a pair (1.79 MHz)")
 
 
 def check_assets(m, src, A, chk, pre=""):
@@ -241,12 +304,18 @@ def run_all(ex, src):
         f"  no mount; one restart, for aligned TITLE {starts}")
     chk(m.sdc.stream is None and not m.sdc.cmdmode, "  closed, back in emulation mode")
 
-    # ---- run 1: full load, out of image order, on the mounted disk
+    # ---- run 1: full load, out of image order, on the mounted disk, with
+    # every instruction's cycles checked against lwasm's listing
     prog, done = assemble(ex, build, "DMPKG_BuildID")
     m = Machine(files_on_card, mounted="DEMO.DSK")
+    seen, bad = check_cycles(m, os.path.join(build, "test.lst"), chk)
     c0 = m.cpu.cycles
     m.run(prog, 0x1000, done)
+    m.trace = None
     print(f"run 1: {m.cpu.cycles - c0} cycles, SDC log {m.sdc.log}")
+    chk(len(seen) > 200 and not bad,
+        f"model cycles match lwasm for all {len(seen)} instructions run "
+        + ", ".join(f"${pc:04X} {w[2]!r}: {n} not {w[0]}" for pc, (n, w) in bad.items()))
     chk(m.peek(0x100, 1) == b"\0", f"no error (A=${m.peek(0x100,1)[0]:02X})")
     check_assets(m, src, A, chk)
     chk(m.peek(0x102, 2) == b"\x30\x00", "decb exec returned in U")
@@ -256,6 +325,15 @@ def run_all(ex, src):
     chk(m.peek(0x6400, 16) == src["palette.bin"],
         "PALETTE reloaded out of order (seek + skip 255 bytes)")
     chk(m.sdc.stream is None and not m.sdc.cmdmode, "closed, back in emulation mode")
+
+    # ---- run 1a: the same load with the CPU at 2.4 MHz: the SDC's refill
+    # time has room to spare (a 6309 in native mode at 1.79 MHz cuts at most
+    # a sixth off the cycles between reads)
+    m = Machine(files_on_card, mounted="DEMO.DSK", mhz=2.4)
+    m.run(prog, 0x1000, done)
+    chk(m.peek(0x100, 1) == b"\0", f"at 2.4 MHz: no error (A=${m.peek(0x100,1)[0]:02X})")
+    check_assets(m, src, A, chk, "  ")
+    stream_rule(chk)
 
     # ---- run 1b: the same load with the state in the direct page
     # (dmpkg_vars.asm included at $00E0 first; DP is 0 in the test machine)

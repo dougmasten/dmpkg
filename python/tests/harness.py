@@ -6,6 +6,8 @@ The test harness the test_*.py modules share: a strict CoCo SDC model, a
 
 The SDC model enforces the protocol as documented and raises on misuse:
   - data read while READY is low, or $FF4B read before its $FF4A partner
+  - a pair read before the firmware's stream loop could refill it (STREAM_*,
+    at the model's CPU clock, MHZ unless the Machine is given another)
   - READY stays stale for READY_LAG cycles after each block (needs the settle delay)
   - M: refuses an image under 82,944 bytes or not a multiple of 256 (not a DSK)
   - STREAM on an image that isn't 512-aligned is an error
@@ -66,8 +68,82 @@ LWASM = os.environ.get("LWASM", "lwasm")
 ENODEV, EVER, EMOUNT, EHDR, EEOF, ETIME, EFAIL = range(1, 8)
 READY_LAG = 20          # cycles READY stays stale after a block is drained
 FILL_TIME = 400         # cycles to "read" the next block from the card
-CMD_SETTLE = 36         # 20us at 1.79MHz: no register access after a command
+CMD_SETTLE_US = 20      # no register access this soon after a command
 FIELD = 14915           # cycles per 60 Hz field at 0.89MHz
+MHZ = 1.79              # the CPU clock the SDC model converts its times with
+
+# The firmware's 16-bit stream loop (asm_stream_to_coco, ATmega328P at
+# 10 MHz; disassembly docs/TIMING.md). Nothing makes the CoCo wait: a read
+# that comes before the MCU has refilled a register gets the old byte.
+# Times in microseconds, counted from when the MCU sees the CoCo's $FF4B read.
+STREAM_DETECT_US = 0.6  # MCU poll (5 cycles) plus the AVR input synchronizer
+STREAM_A_US = 1.3       # next $FF4A byte in place
+STREAM_B_US = 1.8       # next $FF4B byte in place (sets "pending")
+STREAM_PAIR_US = 3.6    # shortest time from one seen $FF4B read to the next
+
+
+# ---- real 6809 cycle counts
+# The MC6809 package adds a cycle for every memory access on top of its
+# opcode table (which already counts them), and its indexed-mode extras are
+# off. These subclasses count what a 6809 takes: the table's cycles, the
+# indexed extras of the 6809 datasheet, one per byte for PSH/PUL, no extra
+# for the $10/$11 page prefixes, and two table entries put right.
+# test_runtime checks every instruction the runtime runs against lwasm's
+# cycle listing.
+_IDX_EXTRA = {0x0: 2, 0x1: 3, 0x2: 2, 0x3: 3, 0x4: 0, 0x5: 1, 0x6: 1, 0x8: 1,
+              0x9: 4, 0xB: 4, 0xC: 1, 0xD: 5, 0xF: 2}
+
+
+def indexed_extra(pb):
+    if not pb & 0x80:
+        return 1                                    # 5-bit offset
+    return _IDX_EXTRA.get(pb & 0x0F, 0) + (3 if pb & 0x10 else 0)
+
+
+class Memory6809(Memory):
+    def read_byte(self, address):
+        v = super().read_byte(address)
+        self.cpu.cycles -= 1
+        return v
+
+    def write_byte(self, address, value):
+        super().write_byte(address, value)
+        self.cpu.cycles -= 1
+
+
+class CPU6809(CPU):
+    def __init__(self, memory, cfg):
+        super().__init__(memory, cfg)
+        d = self.opcode_dict
+        for op in (0x10, 0x11):                     # the page's table counts it
+            d[op] = (0, d[op][1])
+        for op, n in ((0x1F, 6), (0x7E, 4)):        # the table has TFR 7, JMP ext 3
+            d[op] = (n, d[op][1])
+        for op in (0x34, 0x35, 0x36, 0x37):         # PSHS PULS PSHU PULU
+            d[op] = (d[op][0], self._stack_op(d[op][1]))
+
+    def _stack_op(self, f):
+        def op(opcode):
+            pb = self.memory._mem[self.program_counter.value]
+            f(opcode)
+            self.cycles += 2 * bin(pb & 0xF0).count("1") + bin(pb & 0x0F).count("1")
+        return op
+
+    def get_ea_indexed(self):
+        start = self.cycles
+        pb = self.memory._mem[self.program_counter.value]
+        ea = super().get_ea_indexed()
+        self.cycles = start + indexed_extra(pb)
+        return ea
+
+    def op_cycles(self):
+        """Table cycles of the instruction at PC (before it runs)."""
+        pc = self.program_counter.value
+        op = self.memory._mem[pc]
+        if op in (0x10, 0x11):
+            op = op * 256 + self.memory._mem[(pc + 1) & 0xFFFF]
+        entry = self.opcode_dict.get(op)
+        return entry[0] if entry else 0
 
 
 class SDCError(Exception):
@@ -75,14 +151,17 @@ class SDCError(Exception):
 
 
 class MockSDC:
-    def __init__(self, cpu, files, firmware=0x0127, mounted=None, present=True):
+    def __init__(self, cpu, files, firmware=0x0127, mounted=None, present=True, mhz=MHZ):
         self.cpu, self.files = cpu, files
+        self.mhz = mhz
+        self.op_bias = 0              # rest of the running instruction (see now)
+        self.cmd_settle = self.us(CMD_SETTLE_US)
         self.present = present        # False: nothing answers at $FF40-$FF4B
         self.fdata = 0                # Flash data register ($FF42)
         self.bank = 0                 # Flash bank (bits 0-2 of $FF43)
         self.firmware = firmware      # BCD, e.g. 0x0127
         self.version_reply = None     # bytes readable at $FF4A/$FF4B
-        self.cmd_at = -CMD_SETTLE
+        self.cmd_at = -self.cmd_settle
         self.fail_block = None        # block number whose read fails
         self.fail_status = 0x08       # firmware: stream ends, $08, no FAILED bit
         self.stall_block = None       # block where the stream hangs (BUSY, never READY)
@@ -100,7 +179,13 @@ class MockSDC:
 
     @property
     def now(self):
-        return self.cpu.cycles
+        """CPU cycles, taking an access as made at the end of its instruction
+        (where a 6809 load or store makes it, give or take a cycle)."""
+        return self.cpu.cycles + self.op_bias
+
+    def us(self, t):
+        """Microseconds in CPU cycles at the model's clock."""
+        return t * self.mhz
 
     # -- status
     # -- Flash registers
@@ -114,7 +199,7 @@ class MockSDC:
         return self.bank | (self.fdata & 0x60)
 
     def settle_check(self, addr):
-        if self.now - self.cmd_at < CMD_SETTLE:
+        if self.now - self.cmd_at < self.cmd_settle:
             raise SDCError(f"read ${addr:04X} {self.now - self.cmd_at} cycles after a command")
 
     def read_stat(self, *_):
@@ -182,7 +267,8 @@ class MockSDC:
             blk = (self.params[0] << 16) | (self.params[1] << 8) | self.params[2]
             if blk * 512 >= len(img):
                 raise SDCError(f"STREAM start block {blk} past end")
-            self.stream = dict(img=img, blk=blk, pos=0, eof=False, expect_b=False)
+            self.stream = dict(img=img, blk=blk, pos=0, eof=False, expect_b=False,
+                               a_at=0, b_at=0, mcu_next=0)
             self.ready_at = self.now + FILL_TIME
             self.stale_until = 0
             self.streams_started += 1
@@ -239,6 +325,15 @@ class MockSDC:
         want = 0xFF4B if s["expect_b"] else 0xFF4A
         if addr != want:
             raise SDCError(f"read ${addr:04X}, expected ${want:04X}")
+        due = s["b_at"] if s["expect_b"] else s["a_at"]
+        if self.now < due:
+            raise SDCError(f"read ${addr:04X} {(due - self.now) / self.mhz:.2f}us before the "
+                           f"MCU refilled it (pos {s['pos']} blk {s['blk']}, {self.mhz} MHz)")
+        if s["expect_b"]:                  # the MCU sees the read, refills the pair
+            seen = max(self.now + self.us(STREAM_DETECT_US), s["mcu_next"])
+            s["a_at"] = seen + self.us(STREAM_A_US)
+            s["b_at"] = seen + self.us(STREAM_B_US)
+            s["mcu_next"] = seen + self.us(STREAM_PAIR_US)
         s["expect_b"] = not s["expect_b"]
         b = s["img"][s["blk"] * 512 + s["pos"]]
         s["pos"] += 1
@@ -249,17 +344,19 @@ class MockSDC:
                 s["eof"] = True
             self.stale_until = self.now + READY_LAG
             self.ready_at = self.now + FILL_TIME
+            s.update(a_at=0, b_at=0, mcu_next=0)   # next block: its first pair waits at READY
         return b
 
 
 class Machine:
-    def __init__(self, files, firmware=0x0127, mounted=None, present=True):
+    def __init__(self, files, firmware=0x0127, mounted=None, present=True, mhz=MHZ):
         cfg = TestCfg({"verbosity": None, "display_cycle": False, "trace": None,
                        "bus_socket_host": None, "bus_socket_port": None, "ram": None,
                        "rom": None, "max_ops": None, "use_bus": False})
-        self.mem = Memory(cfg)
-        self.cpu = CPU(self.mem, cfg)
-        self.sdc = MockSDC(self.cpu, files, firmware, mounted, present)
+        self.mem = Memory6809(cfg)
+        self.cpu = CPU6809(self.mem, cfg)
+        self.sdc = MockSDC(self.cpu, files, firmware, mounted, present, mhz)
+        self.trace = None                     # callable(pc, cycles) after each instruction
         self.phys = bytearray(0x200000)
         self.mmu = 0x3A                       # arbitrary home block for $4000
         m = self.mem
@@ -302,7 +399,13 @@ class Machine:
             c.set_cc(c.get_cc_value() | 0x10)  # I
             c.cycles += 18
             c.program_counter.set(self.mem.read_word(0xFFF8))
+        self.sdc.op_bias = c.op_cycles()
+        if self.trace is None:
+            c.get_and_call_next_op()
+            return
+        pc, c0 = c.program_counter.value, c.cycles
         c.get_and_call_next_op()
+        self.trace(pc, c.cycles - c0)
 
     def _mmu_w(self, _c, _a, _addr, v):
         self.mmu = v

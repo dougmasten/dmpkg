@@ -62,7 +62,7 @@ A `decb` asset (a LOADM file) is read record by record: the record headers come 
 ### Run the CPU at 1.79 MHz, in 6809 mode
 
 - **Double speed:** on a CoCo 3, `sta $FFD9` (`POKE 65497,0`) before loading. The copy is CPU-bound, so this is the biggest single gain.
-- **Not 6309 native mode:** stay in emulation mode (`LDMD #0`) while dmpkg runs ([why](#reading-too-fast-breaks-loads)).
+- **Not 6309 native mode, for now:** stay in emulation mode (`LDMD #0`) while dmpkg runs, until native mode is confirmed on hardware ([why](#reading-too-fast-breaks-loads)).
 
 ### Call the runtime the cheap way
 
@@ -88,9 +88,12 @@ In one repack, 112K of game data as one asset didn't fit the space before track 
 
 ### Reading too fast breaks loads
 
-- **6309 native mode:** on real hardware it failed the header check every time, even with `DMPKG_DELAY` at 64. That delay only adds a wait before polling READY, so the data reads themselves seem to outrun the SDC.
-- **Occasional errors at full speed:** Rick at 1.79 MHz in emulation mode sometimes shows `LOAD ERROR 4`. It isn't diagnosed yet; reads close to the SDC's limit are the main suspect. The [stress test](HWTEST.md#stress-test) is there to measure how often it happens.
-- **So:** the copy already reads about as fast as the SDC seems to take, and a smaller `DMPKG_DELAY` would save 1.5% at most.
+The SDC firmware's stream loop needs at least 3.6 µs a pair, and nothing makes the CPU wait ([SDC_FIRMWARE.md](SDC_FIRMWARE.md#what-dmpkg-needs)). The build_id check in `dmpkg_open` read the header with three back-to-back `LDD $FF4A`s, which is too fast:
+
+- **6309 native mode:** on real hardware it failed the header check every time, even with `DMPKG_DELAY` at 64. That delay only adds a wait before polling READY. The `LDD`s were 5 cycles (2.8 µs) apart.
+- **Occasional errors at full speed:** Rick at 1.79 MHz in emulation mode sometimes showed `LOAD ERROR 4` (`DMPKG_EHDR`). There the `LDD`s were 6 cycles (3.35 µs) apart. The first pair or two have some slack, so it only just failed, now and then.
+- **The fix:** a `MUL` (11 cycles, 1 byte) between the header reads. The copy loop takes 11 cycles a pair (6.1 µs at 1.79 MHz, fine up to about 3 MHz), and the skip and tail loops are slower still. The [stress test](HWTEST.md#stress-test) should now show no `E4`.
+- **So:** don't read two pairs closer than 3.6 µs apart, and a smaller `DMPKG_DELAY` would save 1.5% at most.
 
 ### What didn't help
 
@@ -102,7 +105,7 @@ These come up as ways to speed up loading. Each was measured or worked through f
 
 **Jumping into the unrolled loop for the tail** (Duff's device). It replaces the loop for the 0–31 leftover bytes of a chunk. Measured on whole loads of two repacks: −0.19% on one and +0.06% on the other, for 13 more bytes of runtime. The leftover bytes are too small a share of the time.
 
-**Stack blasting.** `PULU`/`PULS` read consecutive addresses, but the SDC's data is always at `$FF4A`/`$FF4B`, so the reads can't be blasted. Blasting the writes (`PSHU` of D, X and Y) would save about a quarter of the copy's cycles. But pushes fill memory downwards, so the packer would have to store every asset reversed in 6-byte groups. The three loads back to back would also read the SDC about twice as fast, which is the pattern that already breaks 6309 native mode.
+**Stack blasting.** `PULU`/`PULS` read consecutive addresses, but the SDC's data is always at `$FF4A`/`$FF4B`, so the reads can't be blasted. Blasting the writes (`PSHU` of D, X and Y) would save about a quarter of the copy's cycles. But pushes fill memory downwards, so the packer would have to store every asset reversed in 6-byte groups. Three back-to-back loads would also read the SDC faster than its firmware refills the data registers.
 
 **Direct-page addressing for the SDC registers** (DP = `$FF`). `LDD <$4A` takes the same 5 cycles as the copy loop's indexed `LDU ,Y`, so the copy gains nothing. Every entry point would have to save and restore DP, and a program's interrupt handlers would see the wrong DP during a load.
 
@@ -116,4 +119,4 @@ These come up as ways to speed up loading. Each was measured or worked through f
 
 - **Hardware test:** `BLOCK MS` is the real time per 512-byte block, `RESTART MS` the extra cost of a restart. If `BLOCK MS` is close to the copy's 1.6 ms of CPU time per block, loads are limited by the CPU, and CPU speed and fewer instructions help. If it's well above, the SDC is the limit, and only fewer restarts help.
 - **Stress test:** checks a change didn't make loads less reliable. Run it for a few hours (a few hundred passes) at the speed the loader uses.
-- **Emulator:** the repack tests print the cycles a load takes, which is a quick way to compare two versions of a loader or the runtime. They count CPU work, not the SDC's real timing.
+- **Emulator:** the repack tests print the cycles a load takes, which is a quick way to compare two versions of a loader or the runtime. They count exact 6809 cycles of CPU work. The SDC model knows the firmware's per-pair timing, but not the card's time between blocks.

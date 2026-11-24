@@ -296,8 +296,14 @@ dmpkg_open
         bcs     @error
         ldy     3,s                     ; expected build_id pointer (saved Y)
         beq     @ok
+; The firmware needs 3.6us to refill the pair after a $FF4B read, and nothing
+; makes the CPU wait. Back-to-back LDDs come 6 cycles apart (5 on a 6309 in
+; native mode), 3.4us at 1.79MHz, so each is spaced out with a MUL (1 byte,
+; 11 cycles; D is a throwaway there). CMPD/BNE space out the last pair.
         ldd     SDC_DATA                ; drop bytes 0-3 (magic: the
-        ldd     SDC_DATA                ;  build_id check covers it)
+        mul                             ;  build_id check covers it)
+        ldd     SDC_DATA
+        mul
         ldd     SDC_DATA                ; bytes 4-7: build_id
         cmpd    ,y
         bne     @ehdr                   ; fail build_id check
